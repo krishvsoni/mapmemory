@@ -1,4 +1,5 @@
 import { PriorityQueue } from '../../../shared/utils/priority-queue.js';
+import { cosineSimilarity } from '../../../shared/utils/vector-math.js';
 import { RETRIEVAL_DEFAULTS } from '../../../config/constants.js';
 import type { GraphService } from '../../graph/graph.service.js';
 import type { TraversalService, BeamSearchOptions } from '../../graph/traversal.service.js';
@@ -18,18 +19,20 @@ export class RetrievalService {
     private readonly traversal: TraversalService,
     private readonly episodes: EpisodeRepository,
     private readonly llm: LlmService,
+    private readonly writeEpisodes: EpisodeRepository = episodes,
   ) {}
 
   async retrieve(spaceId: string, queryText: string, options: BeamSearchOptions = {}): Promise<RetrievalResult> {
     const queryEmbedding = await this.llm.embedOne(queryText);
     const facts = await this.traversal.beamSearch(spaceId, queryEmbedding, options);
-    const episodeResults = await this.rankEpisodes(spaceId, facts);
+    const episodeResults = await this.rankEpisodes(spaceId, facts, queryEmbedding);
     return { facts, episodes: episodeResults };
   }
 
   private async rankEpisodes(
     spaceId: string,
     facts: ScoredEdge[],
+    queryEmbedding: number[],
   ): Promise<Array<{ episode: Episode; relevance: number }>> {
     if (facts.length === 0) return [];
 
@@ -60,8 +63,10 @@ export class RetrievalService {
         overlapCountByEpisode.get(episodeId) ?? 0,
         totalCountByEpisode.get(episodeId) ?? 0,
       );
+      const querySimilarity = episode?.embedding ? cosineSimilarity(queryEmbedding, episode.embedding) : 0;
       const score = compositeEpisodicScore({
         relevance: baseRelevance,
+        querySimilarity,
         importance: episode?.importance ?? 5,
         ageInSteps: latestSequenceNo - (episode?.sequenceNo ?? latestSequenceNo),
         halfLifeSteps: RETRIEVAL_DEFAULTS.recencyHalfLifeSteps,
@@ -71,7 +76,7 @@ export class RetrievalService {
     }
 
     const top = queue.topK(RETRIEVAL_DEFAULTS.episodicTopK);
-    await this.episodes.recordAccess(
+    await this.writeEpisodes.recordAccess(
       top.map((t) => t.episodeId),
       latestSequenceNo,
     );

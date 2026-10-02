@@ -23,14 +23,38 @@ together to assemble retrieval context.
 - **Fact history** — `GET /v1/spaces/:id/edges/:edgeId/history` walks the
   supersede chain, exposing what used to be true and when it changed.
 
+### Graph algorithms
+
+- **Connected-components reflection clustering** — reflection no longer
+  batches the oldest N raw episodes by timestamp. It builds the
+  episode↔entity bipartite graph for a space and finds connected components
+  (union-find, `modules/memory/reflection/episode-clustering.ts`); the
+  largest topic-coherent cluster is summarized, not an arbitrary time slice.
+- **Centrality (PageRank)** over each space's active fact graph
+  (`modules/graph/centrality.ts`, power-iteration with dangling-node mass
+  redistribution) surfaces which entities matter most. Exposed at
+  `GET /v1/spaces/:id/entities/central`, cached in Redis and invalidated
+  whenever consolidation changes the edge set, and used as a small ranking
+  boost in beam-search traversal so retrieval mildly favors well-connected
+  entities over isolated ones.
+- **Shortest path (BFS)** between two entities —
+  `GET /v1/spaces/:id/path?from=&to=` (`modules/graph/pathfinding.service.ts`)
+  — a genuine multi-hop "how is X connected to Y" query, not just RAG context
+  assembly.
+
 ### Episodic memory
 
 Beyond recency and fact-overlap, every episode carries an **importance**
 score (1-10, rated by the LLM at ingestion) and an **access-count**
 reinforcement signal (memories that keep getting retrieved decay slower).
-Retrieval ranks episodes with a weighted composite of relevance, importance,
-recency decay, and reinforcement (`modules/memory/retrieval/episodic-scoring.ts`,
-weights in `EPISODIC_SCORE_WEIGHTS`).
+Retrieval ranks episodes with a weighted composite of fact-overlap relevance,
+direct query-to-episode embedding similarity, importance, recency decay, and
+reinforcement (`modules/memory/retrieval/episodic-scoring.ts`, weights in
+`EPISODIC_SCORE_WEIGHTS`). The query-similarity term mirrors the one genuinely
+validated piece of prior art here — reverse-engineered graph-memory research
+additively combines fact-overlap relevance with raw query/episode embedding
+similarity for episodic ranking; this uses the same idea with normalized
+cosine similarity instead of an unnormalized dot product.
 
 A background **reflection** job periodically clusters unreflected raw
 episodes per space and asks the LLM to synthesize a higher-level insight,
@@ -75,6 +99,10 @@ score above. Retrieval also reinforces whichever episodes it returns.
   worker replicas.
 - Superseded edges are hard-deleted only after a retention window
   (`npm run db:prune`), bounding storage growth without losing recent history.
+- **Read/write split (CQRS-lite)** — set `DATABASE_READ_URL` to route
+  read-heavy traversal, centrality, and retrieval queries to a replica; writes
+  (ingestion, reinforcement) always go to the primary. Falls back to the
+  primary for everything when unset — zero config required.
 
 ## Stack
 
@@ -108,7 +136,21 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
   and the episodes (raw or reflection) that grounded them.
 - `GET /v1/spaces/:spaceId/nodes/:nodeId/facts` — active facts about one entity.
 - `GET /v1/spaces/:spaceId/edges/:edgeId/history` — the supersede chain for one fact.
+- `GET /v1/spaces/:spaceId/entities/central?limit=` — top entities by PageRank centrality.
+- `GET /v1/spaces/:spaceId/path?from=&to=` — shortest path (BFS) between two entities.
 - `GET /v1/spaces/:spaceId/episodes?kind=raw|reflection` — recent episodes.
+
+## Testing
+
+`npm test` runs both pure unit tests and, when Postgres/Redis are reachable
+(`DATABASE_URL`/`REDIS_URL`), an integration suite
+(`src/integration/memory-loop.integration.test.ts`) that exercises the full
+ingest → corroborate → supersede → retrieve → reflect loop against the real
+database using a deterministic scripted LLM stub (no API key needed). It
+skips itself cleanly if the database isn't reachable. This suite exists
+because the only way a prior Postgres-specific bug (`sql\`col = ANY(${array})\``
+silently mis-binding) was ever caught was by manually curling a live server —
+it's now a permanent regression guard for that bug class.
 
 ## Operations
 

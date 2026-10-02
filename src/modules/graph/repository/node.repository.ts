@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../db/client.js';
 import { semanticNodes } from '../../../db/schema/graph.schema.js';
 import { toVectorLiteral } from '../../../shared/utils/vector-math.js';
@@ -34,7 +34,7 @@ export class NodeRepository {
     const rows = await this.db
       .select()
       .from(semanticNodes)
-      .where(sql`${semanticNodes.id} = ANY(${ids})`);
+      .where(inArray(semanticNodes.id, ids));
     return rows.map(toDomain);
   }
 

@@ -6,6 +6,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
 
   DATABASE_URL: z.string().min(1),
+  DATABASE_READ_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1),
 
   LLM_PROVIDER: z.enum(['openrouter']).default('openrouter'),

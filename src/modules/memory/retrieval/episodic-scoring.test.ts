@@ -48,6 +48,7 @@ describe('compositeEpisodicScore', () => {
   it('ranks a highly important, frequently recalled, on-topic memory above a trivial stale one', () => {
     const strong = compositeEpisodicScore({
       relevance: 1,
+      querySimilarity: 0.9,
       importance: 10,
       ageInSteps: 0,
       halfLifeSteps: 50,
@@ -55,11 +56,32 @@ describe('compositeEpisodicScore', () => {
     });
     const weak = compositeEpisodicScore({
       relevance: 0.1,
+      querySimilarity: 0,
       importance: 1,
       ageInSteps: 500,
       halfLifeSteps: 50,
       accessCount: 0,
     });
     expect(strong).toBeGreaterThan(weak);
+  });
+
+  it('rewards direct query-embedding similarity independent of fact overlap', () => {
+    const base = {
+      relevance: 0.2,
+      importance: 5,
+      ageInSteps: 10,
+      halfLifeSteps: 50,
+      accessCount: 1,
+    };
+    const onTopic = compositeEpisodicScore({ ...base, querySimilarity: 0.9 });
+    const offTopic = compositeEpisodicScore({ ...base, querySimilarity: 0 });
+    expect(onTopic).toBeGreaterThan(offTopic);
+  });
+
+  it('never lets a negative query similarity drag the score below the zero-similarity baseline', () => {
+    const base = { relevance: 0.2, importance: 5, ageInSteps: 10, halfLifeSteps: 50, accessCount: 1 };
+    const negative = compositeEpisodicScore({ ...base, querySimilarity: -0.8 });
+    const zero = compositeEpisodicScore({ ...base, querySimilarity: 0 });
+    expect(negative).toBe(zero);
   });
 });

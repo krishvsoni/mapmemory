@@ -4,6 +4,7 @@ import type { LlmService } from '../../llm/llm.service.js';
 import { REFLECTION_DEFAULTS } from '../../../config/constants.js';
 import type { Episode } from '../../graph/graph.types.js';
 import { buildReflectionPrompt } from './reflection.prompts.js';
+import { clusterEpisodesBySharedEntities } from './episode-clustering.js';
 
 function average(values: number[]): number {
   if (values.length === 0) return REFLECTION_DEFAULTS.defaultImportance;
@@ -21,8 +22,24 @@ export class ReflectionService {
   }
 
   async reflect(spaceId: string): Promise<Episode | null> {
-    const candidates = await this.episodes.unreflectedRawEpisodes(spaceId, REFLECTION_DEFAULTS.clusterSize);
-    if (candidates.length < REFLECTION_DEFAULTS.minClusterSize) return null;
+    const pool = await this.episodes.unreflectedRawEpisodes(spaceId, REFLECTION_DEFAULTS.candidatePoolSize);
+    if (pool.length < REFLECTION_DEFAULTS.minClusterSize) return null;
+
+    const entityIdsByEpisode = await this.episodes.entityIdsByEpisodes(pool.map((e) => e.id));
+    const clusters = clusterEpisodesBySharedEntities(
+      pool.map((e) => e.id),
+      entityIdsByEpisode,
+    );
+
+    const bestCluster = clusters[0];
+    if (!bestCluster || bestCluster.length < REFLECTION_DEFAULTS.minClusterSize) return null;
+
+    const episodeById = new Map(pool.map((e) => [e.id, e]));
+    const candidates = bestCluster
+      .map((id) => episodeById.get(id))
+      .filter((e): e is Episode => e !== undefined)
+      .sort((a, b) => b.sequenceNo - a.sequenceNo)
+      .slice(0, REFLECTION_DEFAULTS.clusterSize);
 
     const summaryText = await this.llm.chat(buildReflectionPrompt(candidates.map((c) => c.rawText)), 0.3);
     const embedding = await this.llm.embedOne(summaryText);

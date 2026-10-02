@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../db/client.js';
 import { semanticEdges } from '../../../db/schema/graph.schema.js';
 import type { SemanticEdge } from '../graph.types.js';
@@ -84,12 +84,17 @@ export class EdgeRepository {
         and(
           eq(semanticEdges.spaceId, spaceId),
           isNull(semanticEdges.supersededByEdgeId),
-          or(
-            sql`${semanticEdges.sourceNodeId} = ANY(${nodeIds})`,
-            sql`${semanticEdges.targetNodeId} = ANY(${nodeIds})`,
-          ),
+          or(inArray(semanticEdges.sourceNodeId, nodeIds), inArray(semanticEdges.targetNodeId, nodeIds)),
         ),
       );
+    return rows.map(toDomain);
+  }
+
+  async allActiveForSpace(spaceId: string): Promise<SemanticEdge[]> {
+    const rows = await this.db
+      .select()
+      .from(semanticEdges)
+      .where(and(eq(semanticEdges.spaceId, spaceId), isNull(semanticEdges.supersededByEdgeId)));
     return rows.map(toDomain);
   }
 
@@ -98,7 +103,7 @@ export class EdgeRepository {
     const rows = await this.db
       .select()
       .from(semanticEdges)
-      .where(sql`${semanticEdges.id} = ANY(${ids})`);
+      .where(inArray(semanticEdges.id, ids));
     return rows.map(toDomain);
   }
 

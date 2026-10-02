@@ -3,6 +3,7 @@ import { GraphService } from '../../graph/graph.service.js';
 import { EpisodeRepository } from '../../graph/repository/episode.repository.js';
 import { RelationResolver } from '../../graph/relation-resolver.js';
 import { withSpaceLock } from '../../distributed/space-lock.js';
+import { invalidateCentralityCache } from '../../graph/centrality.service.js';
 import type { LlmService } from '../../llm/llm.service.js';
 import { clusterEntityLabels } from '../../graph/entity-resolver.js';
 import { cosineSimilarity } from '../../../shared/utils/vector-math.js';
@@ -123,7 +124,7 @@ export class ConsolidationService {
       this.resolveCanonicalRelations(spaceId, relationTexts, embeddingByRelation),
     ]);
 
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const graphTx = new GraphService(tx);
       const episodesTx = new EpisodeRepository(tx);
 
@@ -176,6 +177,11 @@ export class ConsolidationService {
 
       return { episode, createdEdges, corroboratedEdgeIds, supersededEdgeIds };
     });
+
+    if (result.createdEdges.length > 0 || result.supersededEdgeIds.length > 0) {
+      await invalidateCentralityCache(spaceId);
+    }
+    return result;
   }
 
   private async resolveCanonicalRelations(

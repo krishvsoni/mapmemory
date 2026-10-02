@@ -16,6 +16,7 @@ export function reinforcementBoost(accessCount: number): number {
 
 export interface CompositeScoreInputs {
   relevance: number;
+  querySimilarity: number;
   importance: number;
   ageInSteps: number;
   halfLifeSteps: number;
@@ -24,11 +25,13 @@ export interface CompositeScoreInputs {
 
 export function compositeEpisodicScore(inputs: CompositeScoreInputs): number {
   const normalizedImportance = Math.min(Math.max(inputs.importance, 1), 10) / 10;
+  const normalizedSimilarity = Math.max(0, inputs.querySimilarity);
   const recency = recencyWeight(inputs.ageInSteps, inputs.halfLifeSteps);
   const reinforcement = reinforcementBoost(inputs.accessCount);
 
   return (
     EPISODIC_SCORE_WEIGHTS.relevance * inputs.relevance +
+    EPISODIC_SCORE_WEIGHTS.querySimilarity * normalizedSimilarity +
     EPISODIC_SCORE_WEIGHTS.importance * normalizedImportance +
     EPISODIC_SCORE_WEIGHTS.recency * recency +
     EPISODIC_SCORE_WEIGHTS.reinforcement * reinforcement

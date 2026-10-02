@@ -25,16 +25,29 @@ export const RELATION_RESOLUTION = {
 } as const;
 
 export const EPISODIC_SCORE_WEIGHTS = {
-  relevance: 0.45,
-  importance: 0.25,
-  recency: 0.2,
+  relevance: 0.3,
+  querySimilarity: 0.25,
+  importance: 0.2,
+  recency: 0.15,
   reinforcement: 0.1,
 } as const;
 
 export const REFLECTION_DEFAULTS = {
+  candidatePoolSize: 60,
   clusterSize: 12,
   minClusterSize: 4,
   defaultImportance: 7,
+} as const;
+
+export const CENTRALITY_DEFAULTS = {
+  dampingFactor: 0.85,
+  iterations: 20,
+  cacheTtlSeconds: 60 * 60,
+  topKDefault: 10,
+} as const;
+
+export const PATHFINDING_DEFAULTS = {
+  maxDepth: 6,
 } as const;
 
 export const CONSOLIDATION_DEFAULTS = {

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../db/client.js';
-import { episodeEdgeLinks, episodeSources, episodes } from '../../../db/schema/graph.schema.js';
+import { episodeEdgeLinks, episodeSources, episodes, semanticEdges } from '../../../db/schema/graph.schema.js';
 import type { Episode, EpisodeKind } from '../graph.types.js';
 
 function toDomain(row: typeof episodes.$inferSelect): Episode {
@@ -109,7 +109,7 @@ export class EpisodeRepository {
     const rows = await this.db
       .select({ episodeId: episodeEdgeLinks.episodeId, count: sql<number>`count(*)` })
       .from(episodeEdgeLinks)
-      .where(sql`${episodeEdgeLinks.episodeId} = ANY(${episodeIds})`)
+      .where(inArray(episodeEdgeLinks.episodeId, episodeIds))
       .groupBy(episodeEdgeLinks.episodeId);
     return new Map(rows.map((r) => [r.episodeId, Number(r.count)]));
   }
@@ -119,7 +119,7 @@ export class EpisodeRepository {
     const rows = await this.db
       .select({ episodeId: episodeEdgeLinks.episodeId, edgeId: episodeEdgeLinks.semanticEdgeId })
       .from(episodeEdgeLinks)
-      .where(sql`${episodeEdgeLinks.semanticEdgeId} = ANY(${edgeIds})`);
+      .where(inArray(episodeEdgeLinks.semanticEdgeId, edgeIds));
 
     const map = new Map<string, string[]>();
     for (const row of rows) {
@@ -130,9 +130,31 @@ export class EpisodeRepository {
     return map;
   }
 
+  async entityIdsByEpisodes(episodeIds: string[]): Promise<Map<string, string[]>> {
+    if (episodeIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        episodeId: episodeEdgeLinks.episodeId,
+        sourceNodeId: semanticEdges.sourceNodeId,
+        targetNodeId: semanticEdges.targetNodeId,
+      })
+      .from(episodeEdgeLinks)
+      .innerJoin(semanticEdges, eq(semanticEdges.id, episodeEdgeLinks.semanticEdgeId))
+      .where(inArray(episodeEdgeLinks.episodeId, episodeIds));
+
+    const map = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const set = map.get(row.episodeId) ?? new Set<string>();
+      set.add(row.sourceNodeId);
+      set.add(row.targetNodeId);
+      map.set(row.episodeId, set);
+    }
+    return new Map([...map.entries()].map(([episodeId, set]) => [episodeId, [...set]]));
+  }
+
   async byIds(ids: string[]): Promise<Episode[]> {
     if (ids.length === 0) return [];
-    const rows = await this.db.select().from(episodes).where(sql`${episodes.id} = ANY(${ids})`);
+    const rows = await this.db.select().from(episodes).where(inArray(episodes.id, ids));
     return rows.map(toDomain);
   }
 

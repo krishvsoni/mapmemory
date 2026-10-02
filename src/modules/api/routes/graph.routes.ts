@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Container } from '../../../container.js';
-import { NotFoundError } from '../../../shared/errors.js';
+import { NotFoundError, ValidationError } from '../../../shared/errors.js';
 import type { EpisodeKind } from '../../graph/graph.types.js';
 import { formatScoredEdges } from './graph.presenter.js';
 
@@ -35,6 +35,46 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
       chain.map((edge) => ({ edge, score: 1, depth: 0 })),
     );
     return { history };
+  });
+
+  app.get('/v1/spaces/:spaceId/entities/central', async (request) => {
+    const tenantId = request.tenantId as string;
+    const { spaceId } = request.params as { spaceId: string };
+    const { limit } = request.query as { limit?: string };
+
+    const space = await container.tenants.spaces.findById(tenantId, spaceId);
+    if (!space) throw new NotFoundError('Memory space');
+
+    const ranked = await container.centrality.topEntities(spaceId, limit ? Number(limit) : undefined);
+    const nodes = await container.graph.nodes.findByIds(ranked.map((r) => r.nodeId));
+    const labelById = new Map(nodes.map((n) => [n.id, n.label]));
+
+    return {
+      entities: ranked.map((r) => ({
+        nodeId: r.nodeId,
+        label: labelById.get(r.nodeId) ?? r.nodeId,
+        centrality: r.score,
+      })),
+    };
+  });
+
+  app.get('/v1/spaces/:spaceId/path', async (request) => {
+    const tenantId = request.tenantId as string;
+    const { spaceId } = request.params as { spaceId: string };
+    const { from, to } = request.query as { from?: string; to?: string };
+
+    const space = await container.tenants.spaces.findById(tenantId, spaceId);
+    if (!space) throw new NotFoundError('Memory space');
+    if (!from || !to) throw new ValidationError('Both "from" and "to" node ids are required');
+
+    const edges = await container.pathfinding.shortestPath(spaceId, from, to);
+    if (edges === null) return { found: false, path: null };
+
+    const path = await formatScoredEdges(
+      container,
+      edges.map((edge, index) => ({ edge, score: 1, depth: index })),
+    );
+    return { found: true, path };
   });
 
   app.get('/v1/spaces/:spaceId/episodes', async (request) => {
