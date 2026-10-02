@@ -12,11 +12,15 @@ const envSchema = z.object({
   OPENROUTER_API_KEY: z.string().min(1),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_CHAT_MODEL: z.string().default('openai/gpt-4o-mini'),
+  OPENROUTER_ESCALATION_CHAT_MODEL: z.string().optional(),
   OPENROUTER_EMBED_MODEL: z.string().default('openai/text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: z.coerce.number().default(1536),
 
   AUTH_JWT_SECRET: z.string().min(16),
   API_KEY_PEPPER: z.string().min(16),
+
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  REFLECTION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
 });
 
 export type Env = z.infer<typeof envSchema>;

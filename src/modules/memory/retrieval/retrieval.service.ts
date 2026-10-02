@@ -5,7 +5,7 @@ import type { TraversalService, BeamSearchOptions } from '../../graph/traversal.
 import type { EpisodeRepository } from '../../graph/repository/episode.repository.js';
 import type { LlmService } from '../../llm/llm.service.js';
 import type { Episode, ScoredEdge } from '../../graph/graph.types.js';
-import { episodicRelevance, recencyWeight } from './episodic-scoring.js';
+import { compositeEpisodicScore, episodicRelevance } from './episodic-scoring.js';
 
 export interface RetrievalResult {
   facts: ScoredEdge[];
@@ -55,17 +55,28 @@ export class RetrievalService {
 
     const queue = new PriorityQueue<{ episodeId: string; relevance: number }>();
     for (const episodeId of episodeIds) {
+      const episode = episodeById.get(episodeId);
       const baseRelevance = episodicRelevance(
         overlapCountByEpisode.get(episodeId) ?? 0,
         totalCountByEpisode.get(episodeId) ?? 0,
       );
-      const ageInSteps = latestSequenceNo - (episodeById.get(episodeId)?.sequenceNo ?? latestSequenceNo);
-      const weight = recencyWeight(ageInSteps, RETRIEVAL_DEFAULTS.recencyHalfLifeSteps);
-      queue.push({ episodeId, relevance: baseRelevance * weight }, baseRelevance * weight);
+      const score = compositeEpisodicScore({
+        relevance: baseRelevance,
+        importance: episode?.importance ?? 5,
+        ageInSteps: latestSequenceNo - (episode?.sequenceNo ?? latestSequenceNo),
+        halfLifeSteps: RETRIEVAL_DEFAULTS.recencyHalfLifeSteps,
+        accessCount: episode?.accessCount ?? 0,
+      });
+      queue.push({ episodeId, relevance: score }, score);
     }
 
-    return queue
-      .topK(RETRIEVAL_DEFAULTS.episodicTopK)
+    const top = queue.topK(RETRIEVAL_DEFAULTS.episodicTopK);
+    await this.episodes.recordAccess(
+      top.map((t) => t.episodeId),
+      latestSequenceNo,
+    );
+
+    return top
       .map((t) => {
         const episode = episodeById.get(t.episodeId);
         return episode ? { episode, relevance: t.relevance } : null;

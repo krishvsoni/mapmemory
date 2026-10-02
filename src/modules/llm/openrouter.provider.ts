@@ -57,7 +57,7 @@ export class OpenRouterProvider implements LlmProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({
-        model: this.chatModel,
+        model: options.model ?? this.chatModel,
         messages,
         temperature: options.temperature ?? 0.2,
         max_tokens: options.maxTokens ?? 1024,

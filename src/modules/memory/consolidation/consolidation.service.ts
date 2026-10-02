@@ -1,6 +1,8 @@
 import type { Database } from '../../../db/client.js';
 import { GraphService } from '../../graph/graph.service.js';
 import { EpisodeRepository } from '../../graph/repository/episode.repository.js';
+import { RelationResolver } from '../../graph/relation-resolver.js';
+import { withSpaceLock } from '../../distributed/space-lock.js';
 import type { LlmService } from '../../llm/llm.service.js';
 import { clusterEntityLabels } from '../../graph/entity-resolver.js';
 import { cosineSimilarity } from '../../../shared/utils/vector-math.js';
@@ -8,12 +10,13 @@ import { PriorityQueue } from '../../../shared/utils/priority-queue.js';
 import { CONSOLIDATION_DEFAULTS, TRIPLET_CONSTRAINTS } from '../../../config/constants.js';
 import { TripletExtractor } from '../extraction/triplet-extractor.js';
 import { ContradictionResolver } from '../extraction/contradiction-resolver.js';
-import type { Episode, SemanticEdge, SemanticNode, Triplet } from '../../graph/graph.types.js';
+import type { EntityType, Episode, SemanticEdge, SemanticNode, Triplet } from '../../graph/graph.types.js';
 import type { ExistingFactForPrompt, NewTripletForPrompt } from '../extraction/extraction.prompts.js';
 
 export interface ConsolidationResult {
   episode: Episode;
   createdEdges: SemanticEdge[];
+  corroboratedEdgeIds: string[];
   supersededEdgeIds: string[];
 }
 
@@ -47,9 +50,19 @@ function dedupeTriplets(triplets: Triplet[]): Triplet[] {
   return result;
 }
 
+function buildTypeByLabel(triplets: Triplet[]): Map<string, EntityType> {
+  const typeByLabel = new Map<string, EntityType>();
+  for (const t of triplets) {
+    if (!typeByLabel.has(t.subject)) typeByLabel.set(t.subject, t.subjectType);
+    if (!typeByLabel.has(t.object)) typeByLabel.set(t.object, t.objectType);
+  }
+  return typeByLabel;
+}
+
 export class ConsolidationService {
   private readonly extractor: TripletExtractor;
   private readonly resolver: ContradictionResolver;
+  private readonly relations: RelationResolver;
   private readonly graph: GraphService;
   private readonly episodes: EpisodeRepository;
 
@@ -59,58 +72,65 @@ export class ConsolidationService {
   ) {
     this.extractor = new TripletExtractor(llm);
     this.resolver = new ContradictionResolver(llm);
+    this.relations = new RelationResolver(db);
     this.graph = new GraphService(db);
     this.episodes = new EpisodeRepository(db);
   }
 
   async ingest(spaceId: string, observationText: string): Promise<ConsolidationResult> {
-    const rawTriplets = await this.extractor.extract(observationText);
-    const triplets = dedupeTriplets(rawTriplets);
+    const extraction = await this.extractor.extract(observationText);
+    const triplets = dedupeTriplets(extraction.triplets);
     const episodeEmbedding = await this.llm.embedOne(observationText);
 
     if (triplets.length === 0) {
       return this.db.transaction(async (tx) => {
         const episodesTx = new EpisodeRepository(tx);
-        const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding);
-        return { episode, createdEdges: [], supersededEdgeIds: [] };
+        const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, extraction.importance);
+        return { episode, createdEdges: [], corroboratedEdgeIds: [], supersededEdgeIds: [] };
       });
     }
 
-    return this.consolidate(spaceId, observationText, episodeEmbedding, triplets);
+    return withSpaceLock(spaceId, () =>
+      this.consolidate(spaceId, observationText, episodeEmbedding, extraction.importance, triplets),
+    );
   }
 
   private async consolidate(
     spaceId: string,
     observationText: string,
     episodeEmbedding: number[],
+    importance: number,
     triplets: Triplet[],
   ): Promise<ConsolidationResult> {
     const entityLabels = unique(triplets.flatMap((t) => [t.subject, t.object]));
+    const relationTexts = unique(triplets.map((t) => t.relation));
     const tripletSentences = triplets.map(tripletText);
+    const typeByLabel = buildTypeByLabel(triplets);
 
-    const [entityEmbeddings, tripletEmbeddings] = await Promise.all([
+    const [entityEmbeddings, tripletEmbeddings, relationEmbeddings] = await Promise.all([
       this.llm.embedMany(entityLabels),
       this.llm.embedMany(tripletSentences),
+      this.llm.embedMany(relationTexts),
     ]);
     const embeddingByLabel = new Map(entityLabels.map((label, i) => [label, entityEmbeddings[i] as number[]]));
+    const embeddingByRelation = new Map(relationTexts.map((text, i) => [text, relationEmbeddings[i] as number[]]));
 
-    const canonicalByLabel = clusterEntityLabels(entityLabels, embeddingByLabel);
+    const canonicalByLabel = clusterEntityLabels(entityLabels, embeddingByLabel, typeByLabel);
     const canonicalLabels = unique([...canonicalByLabel.values()]);
 
-    const { supersedeByTripletIndex } = await this.planContradictionResolution(
-      spaceId,
-      canonicalLabels,
-      embeddingByLabel,
-      triplets,
-      tripletEmbeddings,
-    );
+    const [{ supersedeByTripletIndex }, canonicalRelationByText] = await Promise.all([
+      this.planContradictionResolution(spaceId, canonicalLabels, triplets, tripletEmbeddings),
+      this.resolveCanonicalRelations(spaceId, relationTexts, embeddingByRelation),
+    ]);
 
     return this.db.transaction(async (tx) => {
       const graphTx = new GraphService(tx);
       const episodesTx = new EpisodeRepository(tx);
 
       const canonicalNodes = await Promise.all(
-        canonicalLabels.map((label) => graphTx.upsertNode(spaceId, label, embeddingByLabel.get(label) as number[])),
+        canonicalLabels.map((label) =>
+          graphTx.upsertNode(spaceId, label, embeddingByLabel.get(label) as number[], typeByLabel.get(label)),
+        ),
       );
       const nodeByCanonicalLabel = new Map(canonicalLabels.map((label, i) => [label, canonicalNodes[i]]));
       const nodeIdByLabel = new Map(
@@ -120,9 +140,10 @@ export class ConsolidationService {
         ]),
       );
 
-      const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding);
+      const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, importance);
 
       const createdEdges: SemanticEdge[] = [];
+      const corroboratedEdgeIds: string[] = [];
       const supersededEdgeIds: string[] = [];
 
       for (let index = 0; index < triplets.length; index += 1) {
@@ -131,27 +152,49 @@ export class ConsolidationService {
         const sourceId = nodeIdByLabel.get(triplet.subject);
         const targetId = nodeIdByLabel.get(triplet.object);
         const embedding = tripletEmbeddings[index];
+        const canonicalRelation = canonicalRelationByText.get(triplet.relation) ?? triplet.relation;
         if (!sourceId || !targetId || !embedding) continue;
 
-        const edge = await graphTx.edges.create(spaceId, sourceId, triplet.relation, targetId, embedding);
+        const { edge, wasNew } = await graphTx.upsertOrCorroborateEdge(
+          spaceId,
+          sourceId,
+          triplet.relation,
+          canonicalRelation,
+          targetId,
+          embedding,
+        );
         await episodesTx.linkEdge(episode.id, edge.id);
-        createdEdges.push(edge);
+        if (wasNew) createdEdges.push(edge);
+        else corroboratedEdgeIds.push(edge.id);
 
         const outdatedEdgeId = supersedeByTripletIndex.get(index);
-        if (outdatedEdgeId) {
+        if (outdatedEdgeId && outdatedEdgeId !== edge.id) {
           await graphTx.supersede(outdatedEdgeId, edge.id);
           supersededEdgeIds.push(outdatedEdgeId);
         }
       }
 
-      return { episode, createdEdges, supersededEdgeIds };
+      return { episode, createdEdges, corroboratedEdgeIds, supersededEdgeIds };
     });
+  }
+
+  private async resolveCanonicalRelations(
+    spaceId: string,
+    relationTexts: string[],
+    embeddingByRelation: Map<string, number[]>,
+  ): Promise<Map<string, string>> {
+    const entries = await Promise.all(
+      relationTexts.map(async (text) => {
+        const embedding = embeddingByRelation.get(text) as number[];
+        return [text, await this.relations.resolve(spaceId, text, embedding)] as const;
+      }),
+    );
+    return new Map(entries);
   }
 
   private async planContradictionResolution(
     spaceId: string,
     canonicalLabels: string[],
-    embeddingByLabel: Map<string, number[]>,
     triplets: Triplet[],
     tripletEmbeddings: number[][],
   ): Promise<{ supersedeByTripletIndex: Map<number, string> }> {

@@ -20,6 +20,23 @@ export const ENTITY_RESOLUTION = {
   mergeSimilarityThreshold: 0.92,
 } as const;
 
+export const RELATION_RESOLUTION = {
+  mergeSimilarityThreshold: 0.88,
+} as const;
+
+export const EPISODIC_SCORE_WEIGHTS = {
+  relevance: 0.45,
+  importance: 0.25,
+  recency: 0.2,
+  reinforcement: 0.1,
+} as const;
+
+export const REFLECTION_DEFAULTS = {
+  clusterSize: 12,
+  minClusterSize: 4,
+  defaultImportance: 7,
+} as const;
+
 export const CONSOLIDATION_DEFAULTS = {
   maxExistingFactsForContradictionPrompt: 40,
 } as const;

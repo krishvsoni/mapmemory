@@ -1,7 +1,7 @@
 import type { DbClient } from '../../db/client.js';
 import { NodeRepository } from './repository/node.repository.js';
 import { EdgeRepository } from './repository/edge.repository.js';
-import type { SemanticEdge, SemanticNode } from './graph.types.js';
+import type { EntityType, SemanticEdge, SemanticNode } from './graph.types.js';
 
 export class GraphService {
   readonly nodes: NodeRepository;
@@ -12,24 +12,26 @@ export class GraphService {
     this.edges = new EdgeRepository(db);
   }
 
-  async upsertNode(spaceId: string, label: string, embedding: number[]): Promise<SemanticNode> {
+  async upsertNode(spaceId: string, label: string, embedding: number[], entityType?: EntityType): Promise<SemanticNode> {
     const existing = await this.nodes.findByLabel(spaceId, label);
     if (existing) return existing;
-    return this.nodes.create(spaceId, label, embedding);
+    return this.nodes.create(spaceId, label, embedding, entityType);
   }
 
-  async addFact(
+  async upsertOrCorroborateEdge(
     spaceId: string,
-    subjectLabel: string,
+    sourceNodeId: string,
     relation: string,
-    objectLabel: string,
-    tripletEmbedding: number[],
-    subjectEmbedding: number[],
-    objectEmbedding: number[],
-  ): Promise<SemanticEdge> {
-    const subject = await this.upsertNode(spaceId, subjectLabel, subjectEmbedding);
-    const object = await this.upsertNode(spaceId, objectLabel, objectEmbedding);
-    return this.edges.create(spaceId, subject.id, relation, object.id, tripletEmbedding);
+    canonicalRelation: string,
+    targetNodeId: string,
+    embedding: number[],
+  ): Promise<{ edge: SemanticEdge; wasNew: boolean }> {
+    const existing = await this.edges.findActiveMatch(spaceId, sourceNodeId, canonicalRelation, targetNodeId);
+    if (existing) {
+      return { edge: await this.edges.corroborate(existing.id), wasNew: false };
+    }
+    const created = await this.edges.create(spaceId, sourceNodeId, relation, targetNodeId, embedding, canonicalRelation);
+    return { edge: created, wasNew: true };
   }
 
   async supersede(oldEdgeId: string, newEdgeId: string): Promise<void> {

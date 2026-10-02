@@ -1,5 +1,6 @@
 import { Worker } from 'bullmq';
 import { buildContainer } from '../container.js';
+import { env } from '../config/env.js';
 import { getRedisConnection } from '../modules/queue/redis-connection.js';
 import { INGEST_QUEUE_NAME, type IngestJobData } from '../modules/queue/ingest.queue.js';
 
@@ -12,10 +13,11 @@ const worker = new Worker<IngestJobData>(
     return {
       episodeId: result.episode.id,
       createdEdgeCount: result.createdEdges.length,
+      corroboratedEdgeCount: result.corroboratedEdgeIds.length,
       supersededEdgeCount: result.supersededEdgeIds.length,
     };
   },
-  { connection: getRedisConnection(), concurrency: 4 },
+  { connection: getRedisConnection(), concurrency: env.WORKER_CONCURRENCY },
 );
 
 worker.on('failed', (job, error) => {

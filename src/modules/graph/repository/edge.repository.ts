@@ -9,8 +9,10 @@ function toDomain(row: typeof semanticEdges.$inferSelect): SemanticEdge {
     spaceId: row.spaceId,
     sourceNodeId: row.sourceNodeId,
     relation: row.relation,
+    canonicalRelation: row.canonicalRelation,
     targetNodeId: row.targetNodeId,
     embedding: row.embedding,
+    corroborationCount: row.corroborationCount,
     supersededByEdgeId: row.supersededByEdgeId,
   };
 }
@@ -24,12 +26,45 @@ export class EdgeRepository {
     relation: string,
     targetNodeId: string,
     embedding: number[],
+    canonicalRelation?: string,
   ): Promise<SemanticEdge> {
     const [row] = await this.db
       .insert(semanticEdges)
-      .values({ spaceId, sourceNodeId, relation, targetNodeId, embedding })
+      .values({ spaceId, sourceNodeId, relation, canonicalRelation: canonicalRelation ?? null, targetNodeId, embedding })
       .returning();
     if (!row) throw new Error('Failed to create semantic edge');
+    return toDomain(row);
+  }
+
+  async findActiveMatch(
+    spaceId: string,
+    sourceNodeId: string,
+    canonicalRelation: string,
+    targetNodeId: string,
+  ): Promise<SemanticEdge | null> {
+    const [row] = await this.db
+      .select()
+      .from(semanticEdges)
+      .where(
+        and(
+          eq(semanticEdges.spaceId, spaceId),
+          eq(semanticEdges.sourceNodeId, sourceNodeId),
+          eq(semanticEdges.targetNodeId, targetNodeId),
+          eq(semanticEdges.canonicalRelation, canonicalRelation),
+          isNull(semanticEdges.supersededByEdgeId),
+        ),
+      )
+      .limit(1);
+    return row ? toDomain(row) : null;
+  }
+
+  async corroborate(edgeId: string): Promise<SemanticEdge> {
+    const [row] = await this.db
+      .update(semanticEdges)
+      .set({ corroborationCount: sql`${semanticEdges.corroborationCount} + 1`, updatedAt: new Date() })
+      .where(eq(semanticEdges.id, edgeId))
+      .returning();
+    if (!row) throw new Error('Failed to corroborate semantic edge');
     return toDomain(row);
   }
 
@@ -65,6 +100,19 @@ export class EdgeRepository {
       .from(semanticEdges)
       .where(sql`${semanticEdges.id} = ANY(${ids})`);
     return rows.map(toDomain);
+  }
+
+  async supersedeChain(edgeId: string): Promise<SemanticEdge[]> {
+    const chain: SemanticEdge[] = [];
+    let current = (await this.byIds([edgeId]))[0] ?? null;
+    const visited = new Set<string>();
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      chain.push(current);
+      const [next] = current.supersededByEdgeId ? await this.byIds([current.supersededByEdgeId]) : [];
+      current = next ?? null;
+    }
+    return chain;
   }
 
   async deleteSupersededOlderThan(cutoff: Date): Promise<number> {

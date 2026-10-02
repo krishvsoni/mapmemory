@@ -6,6 +6,7 @@ export interface ChatMessage {
 export interface ChatCompletionOptions {
   temperature?: number;
   maxTokens?: number;
+  model?: string;
 }
 
 export interface ChatProvider {

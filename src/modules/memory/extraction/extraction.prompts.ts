@@ -1,16 +1,22 @@
 import type { ChatMessage } from '../../llm/llm.types.js';
 import { TRIPLET_CONSTRAINTS } from '../../../config/constants.js';
 
+const ENTITY_TYPES = ['person', 'location', 'item', 'organization', 'event', 'concept', 'other'];
+
 export function buildTripletExtractionPrompt(observationText: string): ChatMessage[] {
   return [
     {
       role: 'system',
       content: [
-        'You convert a short piece of text into atomic knowledge triplets.',
+        'You convert a short piece of text into atomic knowledge triplets and rate its significance.',
         `Each triplet has a subject, relation, and object, each at most ${TRIPLET_CONSTRAINTS.maxWordsPerTriplet} words.`,
+        `Tag each subject and object with one type from: ${ENTITY_TYPES.join(', ')}.`,
         'Decompose compound statements into multiple triplets.',
         'Skip trivial statements that only restate the current location or timestamp.',
-        'Respond with JSON only: {"triplets":[{"subject":"...","relation":"...","object":"..."}]}',
+        'Also rate how significant, novel, or decision-relevant this text is for an agent to remember later,',
+        'as an integer importance from 1 (trivial, forgettable) to 10 (pivotal, must remember).',
+        'Respond with JSON only: {"importance":5,"triplets":[{"subject":"...","relation":"...","object":"...",',
+        '"subjectType":"...","objectType":"..."}]}',
       ].join(' '),
     },
     { role: 'user', content: observationText },

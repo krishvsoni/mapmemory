@@ -5,6 +5,7 @@ import { CACHE_DEFAULTS } from '../../config/constants.js';
 import { AppError } from '../../shared/errors.js';
 import { getRedisConnection } from '../queue/redis-connection.js';
 import { OpenRouterProvider } from './openrouter.provider.js';
+import { CircuitBreaker } from './circuit-breaker.js';
 import type { ChatMessage, LlmProvider } from './llm.types.js';
 
 function cacheKey(provider: LlmProvider, text: string): string {
@@ -14,11 +15,13 @@ function cacheKey(provider: LlmProvider, text: string): string {
 
 export class LlmService {
   private readonly localCache = new LruCache<string, number[]>(CACHE_DEFAULTS.embeddingCacheSize);
+  private readonly chatBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
+  private readonly embedBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
 
   constructor(private readonly provider: LlmProvider = new OpenRouterProvider()) {}
 
-  async chat(messages: ChatMessage[], temperature = 0.2): Promise<string> {
-    return this.provider.complete(messages, { temperature });
+  async chat(messages: ChatMessage[], temperature = 0.2, model?: string): Promise<string> {
+    return this.chatBreaker.execute(() => this.provider.complete(messages, { temperature, model }));
   }
 
   async embedOne(text: string): Promise<number[]> {
@@ -50,7 +53,7 @@ export class LlmService {
     );
 
     if (remoteMisses.length > 0) {
-      const fresh = await this.provider.embed(remoteMisses.map((m) => m.text));
+      const fresh = await this.embedBreaker.execute(() => this.provider.embed(remoteMisses.map((m) => m.text)));
       await Promise.all(
         fresh.map(async (embedding, i) => {
           const miss = remoteMisses[i];
@@ -69,10 +72,10 @@ export class LlmService {
     });
   }
 
-  async completeJson<T>(messages: ChatMessage[], schema: z.ZodType<T>, retries = 1): Promise<T> {
+  async completeJson<T>(messages: ChatMessage[], schema: z.ZodType<T>, retries = 1, model?: string): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
-      const raw = await this.chat(messages, 0);
+      const raw = await this.chat(messages, 0, model);
       try {
         const parsed = JSON.parse(extractJsonBlock(raw)) as unknown;
         return schema.parse(parsed);

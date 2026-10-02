@@ -3,7 +3,7 @@ import type { DbClient } from '../../../db/client.js';
 import { semanticNodes } from '../../../db/schema/graph.schema.js';
 import { toVectorLiteral } from '../../../shared/utils/vector-math.js';
 import { normalizeLabel } from '../normalize.js';
-import type { SemanticNode } from '../graph.types.js';
+import type { EntityType, SemanticNode } from '../graph.types.js';
 
 function toDomain(row: typeof semanticNodes.$inferSelect): SemanticNode {
   return {
@@ -11,6 +11,7 @@ function toDomain(row: typeof semanticNodes.$inferSelect): SemanticNode {
     spaceId: row.spaceId,
     label: row.label,
     normalizedLabel: row.normalizedLabel,
+    entityType: (row.entityType as EntityType | null) ?? null,
     embedding: row.embedding,
   };
 }
@@ -37,13 +38,14 @@ export class NodeRepository {
     return rows.map(toDomain);
   }
 
-  async create(spaceId: string, label: string, embedding: number[]): Promise<SemanticNode> {
+  async create(spaceId: string, label: string, embedding: number[], entityType?: EntityType): Promise<SemanticNode> {
     const [row] = await this.db
       .insert(semanticNodes)
       .values({
         spaceId,
         label,
         normalizedLabel: normalizeLabel(label),
+        entityType: entityType ?? null,
         embedding,
       })
       .returning();

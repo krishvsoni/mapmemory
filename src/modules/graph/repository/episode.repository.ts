@@ -1,7 +1,7 @@
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../db/client.js';
-import { episodeEdgeLinks, episodes } from '../../../db/schema/graph.schema.js';
-import type { Episode } from '../graph.types.js';
+import { episodeEdgeLinks, episodeSources, episodes } from '../../../db/schema/graph.schema.js';
+import type { Episode, EpisodeKind } from '../graph.types.js';
 
 function toDomain(row: typeof episodes.$inferSelect): Episode {
   return {
@@ -9,6 +9,10 @@ function toDomain(row: typeof episodes.$inferSelect): Episode {
     spaceId: row.spaceId,
     sequenceNo: row.sequenceNo,
     rawText: row.rawText,
+    kind: row.kind as EpisodeKind,
+    importance: row.importance,
+    accessCount: row.accessCount,
+    lastAccessedSequence: row.lastAccessedSequence,
     embedding: row.embedding,
   };
 }
@@ -28,18 +32,76 @@ export class EpisodeRepository {
     return row?.max ?? 0;
   }
 
-  async create(spaceId: string, rawText: string, embedding: number[]): Promise<Episode> {
+  async create(spaceId: string, rawText: string, embedding: number[], importance = 5): Promise<Episode> {
     const sequenceNo = await this.nextSequenceNo(spaceId);
     const [row] = await this.db
       .insert(episodes)
-      .values({ spaceId, sequenceNo, rawText, embedding })
+      .values({ spaceId, sequenceNo, rawText, embedding, importance })
       .returning();
     if (!row) throw new Error('Failed to create episode');
     return toDomain(row);
   }
 
+  async createReflection(
+    spaceId: string,
+    summaryText: string,
+    embedding: number[],
+    importance: number,
+    sourceEpisodeIds: string[],
+  ): Promise<Episode> {
+    const sequenceNo = await this.nextSequenceNo(spaceId);
+    const [row] = await this.db
+      .insert(episodes)
+      .values({ spaceId, sequenceNo, rawText: summaryText, embedding, importance, kind: 'reflection' })
+      .returning();
+    if (!row) throw new Error('Failed to create reflection episode');
+
+    if (sourceEpisodeIds.length > 0) {
+      await this.db
+        .insert(episodeSources)
+        .values(sourceEpisodeIds.map((sourceEpisodeId) => ({ reflectionEpisodeId: row.id, sourceEpisodeId })));
+    }
+    return toDomain(row);
+  }
+
+  async unreflectedRawEpisodes(spaceId: string, limit: number): Promise<Episode[]> {
+    const alreadyReflected = this.db
+      .select({ id: episodeSources.sourceEpisodeId })
+      .from(episodeSources);
+
+    const rows = await this.db
+      .select()
+      .from(episodes)
+      .where(and(eq(episodes.spaceId, spaceId), eq(episodes.kind, 'raw'), notInArray(episodes.id, alreadyReflected)))
+      .orderBy(episodes.sequenceNo)
+      .limit(limit);
+    return rows.map(toDomain);
+  }
+
+  async spacesNeedingReflection(minUnreflectedCount: number): Promise<string[]> {
+    const alreadyReflected = this.db
+      .select({ id: episodeSources.sourceEpisodeId })
+      .from(episodeSources);
+
+    const rows = await this.db
+      .select({ spaceId: episodes.spaceId, count: sql<number>`count(*)` })
+      .from(episodes)
+      .where(and(eq(episodes.kind, 'raw'), notInArray(episodes.id, alreadyReflected)))
+      .groupBy(episodes.spaceId)
+      .having(sql`count(*) >= ${minUnreflectedCount}`);
+    return rows.map((r) => r.spaceId);
+  }
+
   async linkEdge(episodeId: string, semanticEdgeId: string): Promise<void> {
     await this.db.insert(episodeEdgeLinks).values({ episodeId, semanticEdgeId });
+  }
+
+  async recordAccess(episodeIds: string[], atSequence: number): Promise<void> {
+    if (episodeIds.length === 0) return;
+    await this.db
+      .update(episodes)
+      .set({ accessCount: sql`${episodes.accessCount} + 1`, lastAccessedSequence: atSequence })
+      .where(inArray(episodes.id, episodeIds));
   }
 
   async edgeCountByEpisode(episodeIds: string[]): Promise<Map<string, number>> {
