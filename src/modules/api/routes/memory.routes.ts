@@ -7,12 +7,21 @@ import { getIngestQueue } from '../../queue/ingest.queue.js';
 import { computeFairPriority } from '../../distributed/fair-priority.js';
 import { completeIdempotencyKey, reserveIdempotencyKey } from '../../distributed/idempotency.js';
 import { actorFromRequest } from '../../audit/audit-log.service.js';
+import { INPUT_LIMITS } from '../../../config/constants.js';
 import { formatScoredEdges } from './graph.presenter.js';
 
-const ingestSchema = z.object({ text: z.string().min(1) });
+const ingestSchema = z.object({
+  text: z
+    .string()
+    .min(1)
+    .max(INPUT_LIMITS.maxIngestTextLength, `text must be at most ${INPUT_LIMITS.maxIngestTextLength} characters`),
+});
 
 const retrieveSchema = z.object({
-  query: z.string().min(1),
+  query: z
+    .string()
+    .min(1)
+    .max(INPUT_LIMITS.maxRetrievalQueryLength, `query must be at most ${INPUT_LIMITS.maxRetrievalQueryLength} characters`),
   depth: z.number().int().positive().max(5).optional(),
   width: z.number().int().positive().max(20).optional(),
   minSimilarity: z.number().min(0).max(1).optional(),

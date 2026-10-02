@@ -75,3 +75,14 @@ export const PLAN_LIMITS: Record<string, PlanLimit> = {
 };
 
 export const DEFAULT_PLAN_LIMIT: PlanLimit = PLAN_LIMITS.free as PlanLimit;
+
+export const INPUT_LIMITS = {
+  maxIngestTextLength: 8000,
+  maxRetrievalQueryLength: 2000,
+} as const;
+
+export const LLM_CONCURRENCY_DEFAULTS = {
+  leaseMs: 30_000,
+  maxWaitMs: 10_000,
+  pollIntervalMs: 50,
+} as const;

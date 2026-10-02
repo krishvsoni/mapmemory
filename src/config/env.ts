@@ -22,6 +22,7 @@ const envSchema = z.object({
 
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
   REFLECTION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+  LLM_GLOBAL_MAX_CONCURRENT: z.coerce.number().int().positive().default(20),
 
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),

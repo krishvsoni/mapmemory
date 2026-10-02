@@ -44,6 +44,7 @@ export function Workbench({ spaceId }: { spaceId: string }) {
             value={ingestText}
             onChange={(e) => setIngestText(e.target.value)}
             placeholder="e.g. Bob picked up the rusty key"
+            maxLength={8000}
             required
           />
           <div className="flex items-center gap-3">

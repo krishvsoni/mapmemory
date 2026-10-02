@@ -97,7 +97,23 @@ score above. Retrieval also reinforces whichever episodes it returns.
 - **Circuit breaker** around the LLM provider (`modules/llm/circuit-breaker.ts`)
   — after repeated failures it fails fast for a cooldown window instead of
   letting a provider outage back up the whole ingestion queue.
+- **Global LLM concurrency semaphore** (`modules/llm/global-concurrency.ts`)
+  — `WORKER_CONCURRENCY` only caps concurrency *within* one process; this caps
+  it *across every process sharing Redis* (`LLM_GLOBAL_MAX_CONCURRENT`), so
+  scaling out worker replicas can't blow past your actual OpenRouter rate
+  limit and trigger cluster-wide 429s. Implemented as a Redis sorted set
+  (score = acquire time) with an atomic Lua acquire script — a crashed
+  holder's slot self-expires via lease age rather than needing explicit
+  cleanup. (The first cut used separate `ZCARD`/`ZADD` calls, which let
+  concurrent callers all read the same stale count — caught by the test in
+  `src/integration/llm-concurrency.integration.test.ts`, which actually fires
+  25 concurrent calls against the real semaphore rather than asserting on
+  the logic by inspection.)
 - **Per-tenant rate limiting** (Redis-backed) on all authenticated routes.
+- **Bounded input size** — ingest text is capped at 8,000 characters and
+  retrieval queries at 2,000 (`INPUT_LIMITS` in `config/constants.ts`); an
+  episode-count quota alone doesn't bound cost if a single request can carry
+  unlimited text into the LLM call.
 - Two-tier embedding cache (in-process LRU → shared Redis) across API and
   worker replicas.
 - Superseded edges are hard-deleted only after a retention window
@@ -238,7 +254,9 @@ All three skip themselves cleanly if their prerequisites (database, or
   (`RETENTION_DEFAULTS.supersededEdgeRetentionDays`, default 30). Run on a
   schedule in production.
 - `WORKER_CONCURRENCY` tunes how many ingestion jobs run in parallel per
-  worker process; tune against your OpenRouter rate limit.
+  worker process; `LLM_GLOBAL_MAX_CONCURRENT` tunes the hard cap across *all*
+  processes combined — set the latter to match your actual OpenRouter rate
+  limit tier, independent of how many replicas you run.
 - `OPENROUTER_ESCALATION_CHAT_MODEL` is optional; leave unset to disable
   model cascading entirely.
 

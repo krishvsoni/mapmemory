@@ -6,6 +6,7 @@ import { AppError } from '../../shared/errors.js';
 import { getRedisConnection } from '../queue/redis-connection.js';
 import { OpenRouterProvider } from './openrouter.provider.js';
 import { CircuitBreaker } from './circuit-breaker.js';
+import { withGlobalLlmSlot } from './global-concurrency.js';
 import type { ChatMessage, LlmProvider } from './llm.types.js';
 
 function cacheKey(provider: LlmProvider, text: string): string {
@@ -21,7 +22,7 @@ export class LlmService {
   constructor(private readonly provider: LlmProvider = new OpenRouterProvider()) {}
 
   async chat(messages: ChatMessage[], temperature = 0.2, model?: string): Promise<string> {
-    return this.chatBreaker.execute(() => this.provider.complete(messages, { temperature, model }));
+    return this.chatBreaker.execute(() => withGlobalLlmSlot(() => this.provider.complete(messages, { temperature, model })));
   }
 
   async embedOne(text: string): Promise<number[]> {
@@ -53,7 +54,9 @@ export class LlmService {
     );
 
     if (remoteMisses.length > 0) {
-      const fresh = await this.embedBreaker.execute(() => this.provider.embed(remoteMisses.map((m) => m.text)));
+      const fresh = await this.embedBreaker.execute(() =>
+        withGlobalLlmSlot(() => this.provider.embed(remoteMisses.map((m) => m.text))),
+      );
       await Promise.all(
         fresh.map(async (embedding, i) => {
           const miss = remoteMisses[i];
