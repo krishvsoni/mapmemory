@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, boolean, timestamp, index, unique } from 'drizzle-orm/pg-core';
-import { tenants } from './tenant.schema.js';
+import { tenants, apiKeys } from './tenant.schema.js';
 
 export const ssoConfigs = pgTable('sso_configs', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -34,3 +34,15 @@ export const members = pgTable(
     index('members_tenant_idx').on(table.tenantId),
   ],
 );
+
+export const developerAccounts = pgTable('developer_accounts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  externalSubject: text('external_subject').notNull().unique(),
+  email: text('email'),
+  tenantId: uuid('tenant_id')
+    .notNull()
+    .references(() => tenants.id, { onDelete: 'cascade' }),
+  lastSessionApiKeyId: uuid('last_session_api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+});

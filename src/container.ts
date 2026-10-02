@@ -16,6 +16,7 @@ import { MemberRepository } from './modules/auth/oidc/member.repository.js';
 import { AuditLogService } from './modules/audit/audit-log.service.js';
 import { UsageService } from './modules/usage/usage.service.js';
 import { StripeService } from './modules/billing/stripe.service.js';
+import { DeveloperSessionService } from './modules/auth/developer-session.service.js';
 
 export interface Container {
   llm: LlmService;
@@ -35,6 +36,7 @@ export interface Container {
   auditLog: AuditLogService;
   usage: UsageService;
   billing: StripeService;
+  developerSessions: DeveloperSessionService;
 }
 
 export function buildContainer(): Container {
@@ -52,6 +54,7 @@ export function buildContainer(): Container {
   const auditLog = new AuditLogService(db);
   const usage = new UsageService(tenants.spaces);
   const billing = new StripeService(db);
+  const developerSessions = new DeveloperSessionService(db);
 
   // Read-heavy graph traversal/analytics route to DATABASE_READ_URL when configured
   // (falls back to the primary pool otherwise — see db/client.ts).
@@ -81,5 +84,6 @@ export function buildContainer(): Container {
     auditLog,
     usage,
     billing,
+    developerSessions,
   };
 }

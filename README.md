@@ -218,16 +218,38 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
   against their limits (admin only).
 - `POST /v1/sso/config` / `GET /v1/sso/config` / `DELETE /v1/sso/config` —
   configure, inspect, or disable the tenant's OIDC identity provider (admin only).
+- `GET /v1/sso/discover/:tenantId` — public; returns `{issuer, audience}` for a
+  tenant's enabled SSO config, so a dashboard can discover where to send the
+  user for enterprise login without needing to already be authenticated.
 - `GET /v1/members` / `PATCH /v1/members/:id` / `DELETE /v1/members/:id` —
   manage human team members provisioned via SSO login (admin only).
 - `POST /v1/billing/checkout-session` / `POST /v1/billing/portal-session` —
   Stripe subscription management (admin only, requires `STRIPE_SECRET_KEY`).
 - `POST /v1/webhooks/stripe` — public, Stripe-signature-verified webhook.
+- `GET /v1/auth/kinde/login` — public; redirects to Kinde's hosted login
+  (authorization-code + PKCE, `openid-client`). All Kinde credentials
+  (`KINDE_ISSUER_URL`/`KINDE_CLIENT_ID`/`KINDE_CLIENT_SECRET`/`KINDE_CALLBACK_URL`)
+  live only in this service's env — the dashboard never sees them.
+- `GET /v1/auth/kinde/callback` — public; Kinde redirects here after login.
+  Verifies state/nonce/PKCE, auto-provisions a tenant for that Kinde user on
+  first sign-in (revoking any previous session key), then redirects to the
+  dashboard with a short-lived single-use opaque exchange code — never the
+  API key itself — in the query string.
+- `POST /v1/auth/kinde/exchange` — public; trades a single-use exchange code
+  (60s TTL, Redis `GETDEL`) for the real `{apiKey, tenantName}`. Called
+  server-side by the dashboard's `/login/developer/complete` page.
+- `POST /v1/internal/developer-session` — trusted server-to-server only
+  (requires an `X-Internal-Secret` header matching `INTERNAL_INTEGRATION_SECRET`,
+  timing-safe compared; never callable from a browser). For any *other*
+  trusted caller that has already verified an external identity and wants to
+  provision/rotate a developer tenant without going through Kinde — the
+  dashboard's own Kinde login uses the in-process path above instead, not
+  this endpoint — see `modules/auth/developer-session.service.ts`.
 
 ## Testing
 
 `npm test` runs pure unit tests plus, when Postgres/Redis are reachable
-(`DATABASE_URL`/`REDIS_URL`), three integration suites under `src/integration/`:
+(`DATABASE_URL`/`REDIS_URL`), five integration suites under `src/integration/`:
 
 - `memory-loop.integration.test.ts` — the full ingest → corroborate →
   supersede → retrieve → reflect loop, using a deterministic scripted LLM stub
@@ -244,8 +266,16 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
   needed, since signature verification and the subscription-updated/deleted
   handlers are pure local logic; only `checkout.session.completed` (which
   calls the real Stripe API to look up a subscription) isn't covered here.
+- `llm-concurrency.integration.test.ts` — fires concurrent calls against the
+  real global LLM semaphore (real Redis) and asserts the cap actually holds.
+  Caught a real race condition during development: the first implementation
+  used separate `ZCARD`/`ZADD` Redis calls, letting concurrent callers all
+  read the same stale count; fixed with an atomic Lua acquire script.
+- `developer-session.integration.test.ts` — real tenant auto-provisioning on
+  first login, session-key rotation (old key revoked) on repeat logins, and
+  isolation between different external subjects.
 
-All three skip themselves cleanly if their prerequisites (database, or
+All five skip themselves cleanly if their prerequisites (database, or
 `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_ID_PRO`) aren't set.
 
 ## Operations

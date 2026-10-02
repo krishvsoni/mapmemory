@@ -13,10 +13,12 @@ import { registerGraphRoutes } from './routes/graph.routes.js';
 import { registerApiKeyRoutes } from './routes/api-key.routes.js';
 import { registerAuditRoutes } from './routes/audit.routes.js';
 import { registerUsageRoutes } from './routes/usage.routes.js';
-import { registerSsoRoutes } from './routes/sso.routes.js';
+import { registerSsoRoutes, registerSsoDiscoveryRoutes } from './routes/sso.routes.js';
 import { registerMemberRoutes } from './routes/member.routes.js';
 import { registerBillingRoutes } from './routes/billing.routes.js';
 import { registerWebhookRoutes } from './routes/webhook.routes.js';
+import { registerInternalRoutes } from './routes/internal.routes.js';
+import { registerKindeAuthRoutes } from './routes/kinde-auth.routes.js';
 
 export async function buildServer(container: Container): Promise<FastifyInstance> {
   const app = Fastify({
@@ -32,6 +34,9 @@ export async function buildServer(container: Container): Promise<FastifyInstance
 
   registerTenantRoutes(app, container);
   registerWebhookRoutes(app, container);
+  registerInternalRoutes(app, container);
+  registerSsoDiscoveryRoutes(app, container);
+  registerKindeAuthRoutes(app, container);
 
   const authenticate = createAuthHook(container.apiKeys, container.oidcAuth);
   app.register(async (scoped) => {

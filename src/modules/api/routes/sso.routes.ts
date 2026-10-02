@@ -58,3 +58,12 @@ export function registerSsoRoutes(app: FastifyInstance, container: Container): v
     return { disabled: true };
   });
 }
+
+export function registerSsoDiscoveryRoutes(app: FastifyInstance, container: Container): void {
+  app.get('/v1/sso/discover/:tenantId', async (request) => {
+    const { tenantId } = request.params as { tenantId: string };
+    const config = await container.ssoConfigs.findByTenant(tenantId);
+    if (!config || !config.enabled) throw new NotFoundError('SSO configuration');
+    return { issuer: config.issuer, audience: config.audience };
+  });
+}

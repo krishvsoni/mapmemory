@@ -19,6 +19,7 @@ const envSchema = z.object({
 
   AUTH_JWT_SECRET: z.string().min(16),
   API_KEY_PEPPER: z.string().min(16),
+  INTERNAL_INTEGRATION_SECRET: z.string().min(16),
 
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
   REFLECTION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
@@ -31,6 +32,12 @@ const envSchema = z.object({
   STRIPE_CHECKOUT_SUCCESS_URL: z.string().url().optional(),
   STRIPE_CHECKOUT_CANCEL_URL: z.string().url().optional(),
   STRIPE_PORTAL_RETURN_URL: z.string().url().optional(),
+
+  DASHBOARD_URL: z.string().url().default('http://localhost:3000'),
+  KINDE_ISSUER_URL: z.string().url().optional(),
+  KINDE_CLIENT_ID: z.string().optional(),
+  KINDE_CLIENT_SECRET: z.string().optional(),
+  KINDE_CALLBACK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
