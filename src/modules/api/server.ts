@@ -9,6 +9,9 @@ import { registerTenantRoutes } from './routes/tenant.routes.js';
 import { registerSpaceRoutes } from './routes/space.routes.js';
 import { registerMemoryRoutes } from './routes/memory.routes.js';
 import { registerGraphRoutes } from './routes/graph.routes.js';
+import { registerApiKeyRoutes } from './routes/api-key.routes.js';
+import { registerAuditRoutes } from './routes/audit.routes.js';
+import { registerUsageRoutes } from './routes/usage.routes.js';
 
 export async function buildServer(container: Container): Promise<FastifyInstance> {
   const app = Fastify({
@@ -30,6 +33,9 @@ export async function buildServer(container: Container): Promise<FastifyInstance
     registerSpaceRoutes(scoped, container);
     registerMemoryRoutes(scoped, container);
     registerGraphRoutes(scoped, container);
+    registerApiKeyRoutes(scoped, container);
+    registerAuditRoutes(scoped, container);
+    registerUsageRoutes(scoped, container);
   });
 
   return app;

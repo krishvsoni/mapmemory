@@ -33,3 +33,15 @@ export class TooManyRequestsError extends AppError {
     super('RATE_LIMITED', message, 429);
   }
 }
+
+export class ForbiddenError extends AppError {
+  constructor(message = 'Forbidden') {
+    super('FORBIDDEN', message, 403);
+  }
+}
+
+export class QuotaExceededError extends AppError {
+  constructor(message: string) {
+    super('QUOTA_EXCEEDED', message, 402);
+  }
+}

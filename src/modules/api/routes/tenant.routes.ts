@@ -11,6 +11,16 @@ export function registerTenantRoutes(app: FastifyInstance, container: Container)
   app.post('/v1/tenants', async (request, reply) => {
     const body = createTenantSchema.parse(request.body);
     const result = await container.tenants.provision(body.name, body.plan);
+
+    await container.auditLog.record({
+      tenantId: result.tenant.id,
+      actorApiKeyId: null,
+      eventType: 'tenant.provisioned',
+      resourceType: 'tenant',
+      resourceId: result.tenant.id,
+      metadata: { name: result.tenant.name, plan: result.tenant.plan },
+    });
+
     reply.code(201).send({
       tenantId: result.tenant.id,
       name: result.tenant.name,

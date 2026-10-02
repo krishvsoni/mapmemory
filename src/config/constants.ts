@@ -62,3 +62,16 @@ export const RATE_LIMIT_DEFAULTS = {
 export const RETENTION_DEFAULTS = {
   supersededEdgeRetentionDays: 30,
 } as const;
+
+export interface PlanLimit {
+  maxSpaces: number;
+  maxEpisodesPerMonth: number;
+}
+
+export const PLAN_LIMITS: Record<string, PlanLimit> = {
+  free: { maxSpaces: 2, maxEpisodesPerMonth: 500 },
+  pro: { maxSpaces: 25, maxEpisodesPerMonth: 20_000 },
+  enterprise: { maxSpaces: Number.POSITIVE_INFINITY, maxEpisodesPerMonth: Number.POSITIVE_INFINITY },
+};
+
+export const DEFAULT_PLAN_LIMIT: PlanLimit = PLAN_LIMITS.free as PlanLimit;

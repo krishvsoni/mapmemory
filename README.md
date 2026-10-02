@@ -104,6 +104,24 @@ score above. Retrieval also reinforces whichever episodes it returns.
   (ingestion, reinforcement) always go to the primary. Falls back to the
   primary for everything when unset — zero config required.
 
+### Enterprise governance
+
+- **RBAC + scoped API keys** — every key has a role (`admin` full access,
+  `member` can ingest/retrieve, `readonly` retrieve-only) and an optional
+  `scopedSpaceId` that confines it to one memory space, enforced in
+  `modules/auth/authorize.middleware.ts`. Tenant-wide routes (space listing,
+  key management, audit log, usage) reject scoped keys outright.
+- **Audit log** — an append-only `audit_log` table records every
+  tenant/space/key/ingestion/reflection event with the acting key id,
+  timestamp, and metadata (`modules/audit`). Exposed at `GET /v1/audit-log`
+  (admin only). Recording is best-effort and never blocks the action it logs.
+- **Usage quotas** — `plan` on a tenant (`free`/`pro`/`enterprise`) maps to
+  real enforced limits (`PLAN_LIMITS` in `config/constants.ts`): max memory
+  spaces (checked against Postgres at creation time) and max episodes
+  ingested per month (a Redis counter, atomic increment-then-check, same
+  pattern as the rate limiter). `GET /v1/usage` reports current consumption
+  against the limit.
+
 ## Stack
 
 TypeScript, Fastify, PostgreSQL + pgvector (storage, HNSW vector search),
@@ -139,6 +157,11 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
 - `GET /v1/spaces/:spaceId/entities/central?limit=` — top entities by PageRank centrality.
 - `GET /v1/spaces/:spaceId/path?from=&to=` — shortest path (BFS) between two entities.
 - `GET /v1/spaces/:spaceId/episodes?kind=raw|reflection` — recent episodes.
+- `POST /v1/api-keys` / `GET /v1/api-keys` / `DELETE /v1/api-keys/:id` — issue,
+  list, or revoke scoped API keys (admin only).
+- `GET /v1/audit-log?limit=&eventType=` — tenant audit trail (admin only).
+- `GET /v1/usage` — current plan, space count, and monthly episode count
+  against their limits (admin only).
 
 ## Testing
 
@@ -173,3 +196,12 @@ it's now a permanent regression guard for that bug class.
 - Migrations are plain SQL files applied in order by `npm run db:migrate`
   (`src/db/sql/*.sql`) — no separate codegen step (drizzle-kit's bundler
   doesn't resolve this project's NodeNext-style relative imports).
+- Monthly episode quota enforcement is a soft limit: it's atomic per-request
+  (Redis `INCR`-then-check, same as the rate limiter) but a tenant can still
+  land a few requests over the line under heavy concurrent bursts right at
+  the boundary. Fine for cost protection; not a hard billing guarantee.
+- Audit log and usage endpoints are tenant-scoped reads only — no export job,
+  retention policy, or SIEM/webhook push yet. A `/metrics` (Prometheus) endpoint
+  and outbound webhooks for domain events (fact created/superseded, reflection
+  created) are the natural next additions for enterprise observability and
+  integration, not yet built.

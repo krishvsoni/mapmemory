@@ -17,6 +17,8 @@ export const apiKeys = pgTable(
     name: text('name').notNull(),
     keyHash: text('key_hash').notNull(),
     keyPrefix: text('key_prefix').notNull(),
+    role: text('role').notNull().default('admin'),
+    scopedSpaceId: uuid('scoped_space_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),

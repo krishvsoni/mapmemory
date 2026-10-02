@@ -1,11 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { Container } from '../../../container.js';
 import { NotFoundError, ValidationError } from '../../../shared/errors.js';
+import { requireSpaceScope } from '../../auth/authorize.middleware.js';
 import type { EpisodeKind } from '../../graph/graph.types.js';
 import { formatScoredEdges } from './graph.presenter.js';
 
 export function registerGraphRoutes(app: FastifyInstance, container: Container): void {
-  app.get('/v1/spaces/:spaceId/nodes/:nodeId/facts', async (request) => {
+  const scoped = { preHandler: [requireSpaceScope()] };
+
+  app.get('/v1/spaces/:spaceId/nodes/:nodeId/facts', scoped, async (request) => {
     const tenantId = request.tenantId as string;
     const { spaceId, nodeId } = request.params as { spaceId: string; nodeId: string };
 
@@ -20,7 +23,7 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
     return { facts };
   });
 
-  app.get('/v1/spaces/:spaceId/edges/:edgeId/history', async (request) => {
+  app.get('/v1/spaces/:spaceId/edges/:edgeId/history', scoped, async (request) => {
     const tenantId = request.tenantId as string;
     const { spaceId, edgeId } = request.params as { spaceId: string; edgeId: string };
 
@@ -37,7 +40,7 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
     return { history };
   });
 
-  app.get('/v1/spaces/:spaceId/entities/central', async (request) => {
+  app.get('/v1/spaces/:spaceId/entities/central', scoped, async (request) => {
     const tenantId = request.tenantId as string;
     const { spaceId } = request.params as { spaceId: string };
     const { limit } = request.query as { limit?: string };
@@ -58,7 +61,7 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
     };
   });
 
-  app.get('/v1/spaces/:spaceId/path', async (request) => {
+  app.get('/v1/spaces/:spaceId/path', scoped, async (request) => {
     const tenantId = request.tenantId as string;
     const { spaceId } = request.params as { spaceId: string };
     const { from, to } = request.query as { from?: string; to?: string };
@@ -77,7 +80,7 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
     return { found: true, path };
   });
 
-  app.get('/v1/spaces/:spaceId/episodes', async (request) => {
+  app.get('/v1/spaces/:spaceId/episodes', scoped, async (request) => {
     const tenantId = request.tenantId as string;
     const { spaceId } = request.params as { spaceId: string };
     const { limit, kind } = request.query as { limit?: string; kind?: EpisodeKind };

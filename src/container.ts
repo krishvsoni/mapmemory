@@ -10,6 +10,8 @@ import { RetrievalService } from './modules/memory/retrieval/retrieval.service.j
 import { ReflectionService } from './modules/memory/reflection/reflection.service.js';
 import { TenantService } from './modules/tenant/tenant.service.js';
 import { ApiKeyService } from './modules/auth/api-key.service.js';
+import { AuditLogService } from './modules/audit/audit-log.service.js';
+import { UsageService } from './modules/usage/usage.service.js';
 
 export interface Container {
   llm: LlmService;
@@ -23,6 +25,8 @@ export interface Container {
   reflection: ReflectionService;
   tenants: TenantService;
   apiKeys: ApiKeyService;
+  auditLog: AuditLogService;
+  usage: UsageService;
 }
 
 export function buildContainer(): Container {
@@ -34,6 +38,8 @@ export function buildContainer(): Container {
   const consolidation = new ConsolidationService(db, llm);
   const tenants = new TenantService(db);
   const apiKeys = new ApiKeyService(db);
+  const auditLog = new AuditLogService(db);
+  const usage = new UsageService(tenants.spaces);
 
   // Read-heavy graph traversal/analytics route to DATABASE_READ_URL when configured
   // (falls back to the primary pool otherwise — see db/client.ts).
@@ -57,5 +63,7 @@ export function buildContainer(): Container {
     reflection,
     tenants,
     apiKeys,
+    auditLog,
+    usage,
   };
 }
