@@ -4,6 +4,9 @@ Multi-tenant graph memory backend for LLM agents. Ingested text is distilled int
 a semantic fact graph plus a layered episodic memory, and both are queried
 together to assemble retrieval context.
 
+A dashboard for this API (tenant onboarding, spaces, an ingest/retrieve
+console, API keys, usage) lives in `app/` — see `app/README.md`.
+
 ## Architecture
 
 ### Graph creation
