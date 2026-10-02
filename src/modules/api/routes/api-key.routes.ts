@@ -4,6 +4,7 @@ import type { Container } from '../../../container.js';
 import { ValidationError } from '../../../shared/errors.js';
 import { forbidScopedKeys, requireRole } from '../../auth/authorize.middleware.js';
 import { API_KEY_ROLES, type ApiKeyRole } from '../../auth/auth.types.js';
+import { actorFromRequest } from '../../audit/audit-log.service.js';
 
 const issueKeySchema = z.object({
   name: z.string().min(1),
@@ -31,7 +32,7 @@ export function registerApiKeyRoutes(app: FastifyInstance, container: Container)
     );
     await container.auditLog.record({
       tenantId,
-      actorApiKeyId: request.apiKeyId ?? null,
+      ...actorFromRequest(request),
       eventType: 'api_key.issued',
       resourceType: 'api_key',
       resourceId: issued.id,
@@ -53,7 +54,7 @@ export function registerApiKeyRoutes(app: FastifyInstance, container: Container)
     await container.apiKeys.revoke(tenantId, apiKeyId);
     await container.auditLog.record({
       tenantId,
-      actorApiKeyId: request.apiKeyId ?? null,
+      ...actorFromRequest(request),
       eventType: 'api_key.revoked',
       resourceType: 'api_key',
       resourceId: apiKeyId,

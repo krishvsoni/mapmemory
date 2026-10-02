@@ -45,3 +45,9 @@ export class QuotaExceededError extends AppError {
     super('QUOTA_EXCEEDED', message, 402);
   }
 }
+
+export class NotConfiguredError extends AppError {
+  constructor(feature: string) {
+    super('NOT_CONFIGURED', `${feature} is not configured on this deployment`, 503);
+  }
+}

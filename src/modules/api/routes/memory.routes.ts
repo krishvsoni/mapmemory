@@ -6,6 +6,7 @@ import { requireRole, requireSpaceScope } from '../../auth/authorize.middleware.
 import { getIngestQueue } from '../../queue/ingest.queue.js';
 import { computeFairPriority } from '../../distributed/fair-priority.js';
 import { completeIdempotencyKey, reserveIdempotencyKey } from '../../distributed/idempotency.js';
+import { actorFromRequest } from '../../audit/audit-log.service.js';
 import { formatScoredEdges } from './graph.presenter.js';
 
 const ingestSchema = z.object({ text: z.string().min(1) });
@@ -67,7 +68,7 @@ export function registerMemoryRoutes(app: FastifyInstance, container: Container)
 
       await container.auditLog.record({
         tenantId,
-        actorApiKeyId: request.apiKeyId ?? null,
+        ...actorFromRequest(request),
         eventType: 'episode.ingest_requested',
         resourceType: 'memory_space',
         resourceId: spaceId,
@@ -102,7 +103,7 @@ export function registerMemoryRoutes(app: FastifyInstance, container: Container)
       const reflection = await container.reflection.reflect(spaceId);
       await container.auditLog.record({
         tenantId,
-        actorApiKeyId: request.apiKeyId ?? null,
+        ...actorFromRequest(request),
         eventType: 'reflection.triggered',
         resourceType: 'memory_space',
         resourceId: spaceId,

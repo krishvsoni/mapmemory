@@ -122,11 +122,46 @@ score above. Retrieval also reinforces whichever episodes it returns.
   pattern as the rate limiter). `GET /v1/usage` reports current consumption
   against the limit.
 
+### Single sign-on and team members
+
+Two authentication paths work on the exact same routes: a plain `mm_...` API
+key (for developers/automation), or a bearer JWT issued by the tenant's own
+identity provider (for a human team logging in via their company's Keycloak,
+Okta, Auth0, or any standard OIDC provider — the auth middleware tells the two
+apart by prefix, `modules/auth/auth.middleware.ts`).
+
+- An admin configures their IdP once via `POST /v1/sso/config` (issuer,
+  audience/client id, optional explicit JWKS URI — otherwise discovered from
+  the issuer's `/.well-known/openid-configuration`).
+- Any subsequent request with `Authorization: Bearer <OIDC JWT>` is verified
+  against that config (`modules/auth/oidc`, using `jose` for JWKS fetch +
+  signature/issuer/audience verification). A **member** record is created on
+  first login (`members` table) with the config's `defaultRole`, and reused
+  (with `last_login_at` touched) on every subsequent login — no separate
+  provisioning step per teammate.
+- Multiple tenants can share one IdP issuer (e.g. one shared Keycloak
+  instance): the lookup matches on issuer *and* verifies the token's audience
+  against each candidate tenant's configured client id, so tenants stay
+  isolated even when the issuer URL is identical.
+- `GET /v1/members`, `PATCH /v1/members/:id` (role), `DELETE /v1/members/:id`
+  manage the roster (admin only).
+
+### Billing
+
+Stripe-backed subscriptions, inactive until `STRIPE_SECRET_KEY` is set
+(`modules/billing`). `POST /v1/billing/checkout-session` creates a Checkout
+Session for the `pro`/`enterprise` plan; `POST /v1/billing/portal-session`
+gives an existing customer self-service subscription management. A public
+`POST /v1/webhooks/stripe` (signature-verified, outside the authenticated
+route group) keeps `tenants.plan` in sync with Stripe on
+`checkout.session.completed` and `customer.subscription.updated|deleted`.
+
 ## Stack
 
 TypeScript, Fastify, PostgreSQL + pgvector (storage, HNSW vector search),
 BullMQ + Redis (ingestion queue, reflection sweep, locks, rate limiting,
-idempotency, fair scheduling, embedding cache), Zod, Vitest.
+idempotency, fair scheduling, embedding cache), `jose` (OIDC/JWT verification),
+Stripe (billing), Zod, Vitest.
 
 ## Setup
 
@@ -162,18 +197,37 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
 - `GET /v1/audit-log?limit=&eventType=` — tenant audit trail (admin only).
 - `GET /v1/usage` — current plan, space count, and monthly episode count
   against their limits (admin only).
+- `POST /v1/sso/config` / `GET /v1/sso/config` / `DELETE /v1/sso/config` —
+  configure, inspect, or disable the tenant's OIDC identity provider (admin only).
+- `GET /v1/members` / `PATCH /v1/members/:id` / `DELETE /v1/members/:id` —
+  manage human team members provisioned via SSO login (admin only).
+- `POST /v1/billing/checkout-session` / `POST /v1/billing/portal-session` —
+  Stripe subscription management (admin only, requires `STRIPE_SECRET_KEY`).
+- `POST /v1/webhooks/stripe` — public, Stripe-signature-verified webhook.
 
 ## Testing
 
-`npm test` runs both pure unit tests and, when Postgres/Redis are reachable
-(`DATABASE_URL`/`REDIS_URL`), an integration suite
-(`src/integration/memory-loop.integration.test.ts`) that exercises the full
-ingest → corroborate → supersede → retrieve → reflect loop against the real
-database using a deterministic scripted LLM stub (no API key needed). It
-skips itself cleanly if the database isn't reachable. This suite exists
-because the only way a prior Postgres-specific bug (`sql\`col = ANY(${array})\``
-silently mis-binding) was ever caught was by manually curling a live server —
-it's now a permanent regression guard for that bug class.
+`npm test` runs pure unit tests plus, when Postgres/Redis are reachable
+(`DATABASE_URL`/`REDIS_URL`), three integration suites under `src/integration/`:
+
+- `memory-loop.integration.test.ts` — the full ingest → corroborate →
+  supersede → retrieve → reflect loop, using a deterministic scripted LLM stub
+  (no API key needed). Exists because the only way a prior Postgres-specific
+  bug (`sql\`col = ANY(${array})\`` silently mis-binding) was ever caught was
+  by manually curling a live server — it's now a permanent regression guard.
+- `oidc-auth.integration.test.ts` — a real generated RSA keypair, a real HTTP
+  JWKS endpoint (ephemeral local server), and real `jose` signature
+  verification: valid login, member reuse on second login, wrong audience,
+  untrusted issuer, expired token, and disabled-SSO all exercised for real.
+- `billing-webhook.integration.test.ts` — real Stripe HMAC signature
+  generation/verification and real plan upgrade/downgrade logic, using
+  Stripe's own `generateTestHeaderString` test helper. No live Stripe account
+  needed, since signature verification and the subscription-updated/deleted
+  handlers are pure local logic; only `checkout.session.completed` (which
+  calls the real Stripe API to look up a subscription) isn't covered here.
+
+All three skip themselves cleanly if their prerequisites (database, or
+`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_ID_PRO`) aren't set.
 
 ## Operations
 
@@ -205,3 +259,11 @@ it's now a permanent regression guard for that bug class.
   and outbound webhooks for domain events (fact created/superseded, reflection
   created) are the natural next additions for enterprise observability and
   integration, not yet built.
+- SSO members get tenant-wide role-based access on first login; there's no
+  per-space membership scoping for human users yet (API keys support
+  `scopedSpaceId`, members don't) — add if a customer needs per-team-member
+  space isolation.
+- `checkout.session.completed` calls the real Stripe API to retrieve the
+  subscription and isn't covered by the test suite (would need a real Stripe
+  test-mode account or a mocking layer); the signature verification and
+  subscription-updated/deleted paths it shares are fully tested.

@@ -22,6 +22,14 @@ const envSchema = z.object({
 
   WORKER_CONCURRENCY: z.coerce.number().int().positive().default(4),
   REFLECTION_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(5 * 60 * 1000),
+
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_ID_PRO: z.string().optional(),
+  STRIPE_PRICE_ID_ENTERPRISE: z.string().optional(),
+  STRIPE_CHECKOUT_SUCCESS_URL: z.string().url().optional(),
+  STRIPE_CHECKOUT_CANCEL_URL: z.string().url().optional(),
+  STRIPE_PORTAL_RETURN_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

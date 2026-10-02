@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Container } from '../../../container.js';
 import { NotFoundError } from '../../../shared/errors.js';
 import { forbidScopedKeys, requireRole, requireSpaceScope } from '../../auth/authorize.middleware.js';
+import { actorFromRequest } from '../../audit/audit-log.service.js';
 
 const createSpaceSchema = z.object({
   name: z.string().min(1),
@@ -23,7 +24,7 @@ export function registerSpaceRoutes(app: FastifyInstance, container: Container):
       const space = await container.tenants.createSpace(tenantId, body.name, body.description);
       await container.auditLog.record({
         tenantId,
-        actorApiKeyId: request.apiKeyId ?? null,
+        ...actorFromRequest(request),
         eventType: 'space.created',
         resourceType: 'memory_space',
         resourceId: space.id,

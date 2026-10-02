@@ -6,6 +6,7 @@ export interface AuditEntry {
   id: string;
   tenantId: string;
   actorApiKeyId: string | null;
+  actorMemberId: string | null;
   eventType: string;
   resourceType: string;
   resourceId: string | null;
@@ -15,7 +16,8 @@ export interface AuditEntry {
 
 export interface NewAuditEntry {
   tenantId: string;
-  actorApiKeyId: string | null;
+  actorApiKeyId?: string | null;
+  actorMemberId?: string | null;
   eventType: string;
   resourceType: string;
   resourceId?: string;
@@ -28,7 +30,8 @@ export class AuditLogRepository {
   async record(entry: NewAuditEntry): Promise<void> {
     await this.db.insert(auditLog).values({
       tenantId: entry.tenantId,
-      actorApiKeyId: entry.actorApiKeyId,
+      actorApiKeyId: entry.actorApiKeyId ?? null,
+      actorMemberId: entry.actorMemberId ?? null,
       eventType: entry.eventType,
       resourceType: entry.resourceType,
       resourceId: entry.resourceId ?? null,

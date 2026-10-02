@@ -6,6 +6,9 @@ export interface Tenant {
   id: string;
   name: string;
   plan: string;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  subscriptionStatus: string | null;
 }
 
 export class TenantRepository {
@@ -20,5 +23,28 @@ export class TenantRepository {
   async findById(id: string): Promise<Tenant | null> {
     const [row] = await this.db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
     return row ?? null;
+  }
+
+  async findByStripeCustomerId(stripeCustomerId: string): Promise<Tenant | null> {
+    const [row] = await this.db.select().from(tenants).where(eq(tenants.stripeCustomerId, stripeCustomerId)).limit(1);
+    return row ?? null;
+  }
+
+  async setStripeCustomerId(tenantId: string, stripeCustomerId: string): Promise<void> {
+    await this.db.update(tenants).set({ stripeCustomerId }).where(eq(tenants.id, tenantId));
+  }
+
+  async updateSubscription(
+    tenantId: string,
+    fields: { plan: string; stripeSubscriptionId: string | null; subscriptionStatus: string | null },
+  ): Promise<void> {
+    await this.db
+      .update(tenants)
+      .set({
+        plan: fields.plan,
+        stripeSubscriptionId: fields.stripeSubscriptionId,
+        subscriptionStatus: fields.subscriptionStatus,
+      })
+      .where(eq(tenants.id, tenantId));
   }
 }

@@ -10,8 +10,12 @@ import { RetrievalService } from './modules/memory/retrieval/retrieval.service.j
 import { ReflectionService } from './modules/memory/reflection/reflection.service.js';
 import { TenantService } from './modules/tenant/tenant.service.js';
 import { ApiKeyService } from './modules/auth/api-key.service.js';
+import { OidcAuthService } from './modules/auth/oidc/oidc-auth.service.js';
+import { SsoConfigRepository } from './modules/auth/oidc/sso-config.repository.js';
+import { MemberRepository } from './modules/auth/oidc/member.repository.js';
 import { AuditLogService } from './modules/audit/audit-log.service.js';
 import { UsageService } from './modules/usage/usage.service.js';
+import { StripeService } from './modules/billing/stripe.service.js';
 
 export interface Container {
   llm: LlmService;
@@ -25,8 +29,12 @@ export interface Container {
   reflection: ReflectionService;
   tenants: TenantService;
   apiKeys: ApiKeyService;
+  oidcAuth: OidcAuthService;
+  ssoConfigs: SsoConfigRepository;
+  members: MemberRepository;
   auditLog: AuditLogService;
   usage: UsageService;
+  billing: StripeService;
 }
 
 export function buildContainer(): Container {
@@ -38,8 +46,12 @@ export function buildContainer(): Container {
   const consolidation = new ConsolidationService(db, llm);
   const tenants = new TenantService(db);
   const apiKeys = new ApiKeyService(db);
+  const oidcAuth = new OidcAuthService(db);
+  const ssoConfigs = new SsoConfigRepository(db);
+  const members = new MemberRepository(db);
   const auditLog = new AuditLogService(db);
   const usage = new UsageService(tenants.spaces);
+  const billing = new StripeService(db);
 
   // Read-heavy graph traversal/analytics route to DATABASE_READ_URL when configured
   // (falls back to the primary pool otherwise — see db/client.ts).
@@ -63,7 +75,11 @@ export function buildContainer(): Container {
     reflection,
     tenants,
     apiKeys,
+    oidcAuth,
+    ssoConfigs,
+    members,
     auditLog,
     usage,
+    billing,
   };
 }
