@@ -1,0 +1,87 @@
+import { pgTable, uuid, text, timestamp, index, integer } from 'drizzle-orm/pg-core';
+import { vector } from '../types/vector.js';
+import { memorySpaces } from './tenant.schema.js';
+import { env } from '../../config/env.js';
+
+const embeddingVector = vector(env.EMBEDDING_DIMENSIONS);
+
+export const semanticNodes = pgTable(
+  'semantic_nodes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => memorySpaces.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    normalizedLabel: text('normalized_label').notNull(),
+    embedding: embeddingVector('embedding'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('semantic_nodes_space_idx').on(table.spaceId),
+    index('semantic_nodes_normalized_idx').on(table.spaceId, table.normalizedLabel),
+  ],
+);
+
+export const semanticEdges = pgTable(
+  'semantic_edges',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => memorySpaces.id, { onDelete: 'cascade' }),
+    sourceNodeId: uuid('source_node_id')
+      .notNull()
+      .references(() => semanticNodes.id, { onDelete: 'cascade' }),
+    relation: text('relation').notNull(),
+    targetNodeId: uuid('target_node_id')
+      .notNull()
+      .references(() => semanticNodes.id, { onDelete: 'cascade' }),
+    embedding: embeddingVector('embedding'),
+    supersededByEdgeId: uuid('superseded_by_edge_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('semantic_edges_space_idx').on(table.spaceId),
+    index('semantic_edges_source_idx').on(table.sourceNodeId),
+    index('semantic_edges_target_idx').on(table.targetNodeId),
+    index('semantic_edges_active_idx').on(table.spaceId, table.supersededByEdgeId),
+  ],
+);
+
+export const episodes = pgTable(
+  'episodes',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => memorySpaces.id, { onDelete: 'cascade' }),
+    sequenceNo: integer('sequence_no').notNull(),
+    rawText: text('raw_text').notNull(),
+    embedding: embeddingVector('embedding'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('episodes_space_idx').on(table.spaceId),
+    index('episodes_sequence_idx').on(table.spaceId, table.sequenceNo),
+  ],
+);
+
+export const episodeEdgeLinks = pgTable(
+  'episode_edge_links',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    episodeId: uuid('episode_id')
+      .notNull()
+      .references(() => episodes.id, { onDelete: 'cascade' }),
+    semanticEdgeId: uuid('semantic_edge_id')
+      .notNull()
+      .references(() => semanticEdges.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    index('episode_edge_links_episode_idx').on(table.episodeId),
+    index('episode_edge_links_edge_idx').on(table.semanticEdgeId),
+  ],
+);
