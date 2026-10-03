@@ -102,3 +102,9 @@ never sees them.
   one used during development) — the discovery + PKCE authorization-URL
   construction was verified against a real local OIDC discovery document;
   the final code-for-token exchange was not.
+
+## Graph explorer
+
+`/spaces/:spaceId/graph` renders the space's most central entities and their
+facts. Pick a date to see the graph as it was then, include superseded facts
+(dashed), and click a fact to see its history and the episodes it came from.

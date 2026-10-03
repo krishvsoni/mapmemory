@@ -19,6 +19,9 @@ export interface SemanticEdge {
   embedding: number[] | null;
   corroborationCount: number;
   supersededByEdgeId: string | null;
+  validFrom: Date | null;
+  validTo: Date | null;
+  createdAt: Date;
 }
 
 export type EpisodeKind = 'raw' | 'reflection';
@@ -33,6 +36,8 @@ export interface Episode {
   accessCount: number;
   lastAccessedSequence: number | null;
   embedding: number[] | null;
+  occurredAt: Date | null;
+  createdAt: Date;
 }
 
 export interface Triplet {
@@ -41,6 +46,7 @@ export interface Triplet {
   object: string;
   subjectType: EntityType;
   objectType: EntityType;
+  validFrom?: Date | null;
 }
 
 export interface ScoredEdge {

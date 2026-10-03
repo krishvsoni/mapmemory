@@ -78,21 +78,21 @@ export class ConsolidationService {
     this.episodes = new EpisodeRepository(db);
   }
 
-  async ingest(spaceId: string, observationText: string): Promise<ConsolidationResult> {
-    const extraction = await this.extractor.extract(observationText);
+  async ingest(spaceId: string, observationText: string, occurredAt: Date | null = null): Promise<ConsolidationResult> {
+    const extraction = await this.extractor.extract(observationText, occurredAt ?? undefined);
     const triplets = dedupeTriplets(extraction.triplets);
     const episodeEmbedding = await this.llm.embedOne(observationText);
 
     if (triplets.length === 0) {
       return this.db.transaction(async (tx) => {
         const episodesTx = new EpisodeRepository(tx);
-        const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, extraction.importance);
+        const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, extraction.importance, occurredAt);
         return { episode, createdEdges: [], corroboratedEdgeIds: [], supersededEdgeIds: [] };
       });
     }
 
     return withSpaceLock(spaceId, () =>
-      this.consolidate(spaceId, observationText, episodeEmbedding, extraction.importance, triplets),
+      this.consolidate(spaceId, observationText, episodeEmbedding, extraction.importance, triplets, occurredAt),
     );
   }
 
@@ -102,6 +102,7 @@ export class ConsolidationService {
     episodeEmbedding: number[],
     importance: number,
     triplets: Triplet[],
+    occurredAt: Date | null,
   ): Promise<ConsolidationResult> {
     const entityLabels = unique(triplets.flatMap((t) => [t.subject, t.object]));
     const relationTexts = unique(triplets.map((t) => t.relation));
@@ -141,7 +142,7 @@ export class ConsolidationService {
         ]),
       );
 
-      const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, importance);
+      const episode = await episodesTx.create(spaceId, observationText, episodeEmbedding, importance, occurredAt);
 
       const createdEdges: SemanticEdge[] = [];
       const corroboratedEdgeIds: string[] = [];
@@ -154,6 +155,7 @@ export class ConsolidationService {
         const targetId = nodeIdByLabel.get(triplet.object);
         const embedding = tripletEmbeddings[index];
         const canonicalRelation = canonicalRelationByText.get(triplet.relation) ?? triplet.relation;
+        const validFrom = triplet.validFrom ?? occurredAt;
         if (!sourceId || !targetId || !embedding) continue;
 
         const { edge, wasNew } = await graphTx.upsertOrCorroborateEdge(
@@ -163,6 +165,7 @@ export class ConsolidationService {
           canonicalRelation,
           targetId,
           embedding,
+          validFrom,
         );
         await episodesTx.linkEdge(episode.id, edge.id);
         if (wasNew) createdEdges.push(edge);
@@ -170,7 +173,7 @@ export class ConsolidationService {
 
         const outdatedEdgeId = supersedeByTripletIndex.get(index);
         if (outdatedEdgeId && outdatedEdgeId !== edge.id) {
-          await graphTx.supersede(outdatedEdgeId, edge.id);
+          await graphTx.supersede(outdatedEdgeId, edge.id, validFrom ?? undefined);
           supersededEdgeIds.push(outdatedEdgeId);
         }
       }

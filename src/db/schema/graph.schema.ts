@@ -43,6 +43,8 @@ export const semanticEdges = pgTable(
     embedding: embeddingVector('embedding'),
     corroborationCount: integer('corroboration_count').notNull().default(1),
     supersededByEdgeId: uuid('superseded_by_edge_id'),
+    validFrom: timestamp('valid_from', { withTimezone: true }),
+    validTo: timestamp('valid_to', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -68,6 +70,7 @@ export const episodes = pgTable(
     accessCount: integer('access_count').notNull().default(0),
     lastAccessedSequence: integer('last_accessed_sequence'),
     embedding: embeddingVector('embedding'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

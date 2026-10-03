@@ -84,6 +84,33 @@ Embedding-seeded beam search over the semantic graph
 (`modules/graph/traversal.service.ts`) combined with the composite episodic
 score above. Retrieval also reinforces whichever episodes it returns.
 
+- **Hybrid search** — beam-search seeds come from reciprocal rank fusion of
+  vector nearest-neighbours and a Postgres full-text match on entity labels
+  (`shared/utils/rank-fusion.ts`, `lexical-query.ts`); episode candidates add
+  vector and full-text hits on the raw text, so names, ids and rare terms that
+  embeddings blur are still found. Pass `"hybrid": false` to compare against
+  vector-only.
+- **Intent routing** — each query is classified as factual, temporal,
+  relational or summary (`memory/retrieval/query-intent.ts`) and mapped to a
+  retrieval profile: relational questions search deeper, temporal ones widen
+  the beam and include superseded facts, summaries pull more episodes. Explicit
+  `depth`/`width`/`includeHistory` always win. The response reports the
+  detected `intent`.
+- **Provenance** — every fact carries `status`, `validFrom`/`validTo`,
+  `confidence` (grows with corroboration) and the newest `sources` episodes it
+  was derived from.
+
+### Temporal facts
+
+Facts have an event-time validity window (`valid_from`, `valid_to`), separate
+from when they were stored. Ingestion accepts an optional `occurredAt`, the
+extractor resolves relative dates ("last year") against it, and superseding a
+fact closes the old one's window at the new fact's start. `POST .../retrieve`
+accepts `asOf` to answer "what was true on that date" — facts outside the
+window and episodes that happened after it are excluded — and
+`GET .../graph?asOf=` returns the same view of the whole graph. Facts that
+predate this feature fall back to their creation time.
+
 ### Distributed systems / multi-tenant SaaS
 
 - Per-space Redis lock around the consolidation write (above).
@@ -200,16 +227,20 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
 
 - `POST /v1/tenants` — provision a tenant, returns its API key (shown once).
 - `POST /v1/spaces` / `GET /v1/spaces` — manage memory spaces for the tenant.
-- `POST /v1/spaces/:spaceId/episodes` — ingest an observation; returns a job
-  id. Optional `Idempotency-Key` header dedupes retries.
+- `POST /v1/spaces/:spaceId/episodes` — ingest an observation (optional
+  `occurredAt` ISO timestamp); returns a job id. Optional `Idempotency-Key`
+  header dedupes retries.
 - `GET /v1/jobs/:jobId` — poll ingestion job status.
 - `POST /v1/spaces/:spaceId/reflect` — manually trigger a reflection pass.
 - `POST /v1/spaces/:spaceId/retrieve` — query the graph, returns ranked facts
-  and the episodes (raw or reflection) that grounded them.
+  and the episodes (raw or reflection) that grounded them. Optional `asOf`,
+  `hybrid`, `includeHistory`, `depth`, `width`, `minSimilarity`.
 - `GET /v1/spaces/:spaceId/nodes/:nodeId/facts` — active facts about one entity.
 - `GET /v1/spaces/:spaceId/edges/:edgeId/history` — the supersede chain for one fact.
 - `GET /v1/spaces/:spaceId/entities/central?limit=` — top entities by PageRank centrality.
 - `GET /v1/spaces/:spaceId/path?from=&to=` — shortest path (BFS) between two entities.
+- `GET /v1/spaces/:spaceId/graph?limit=&asOf=&includeHistory=` — subgraph of the
+  most central entities and their facts, optionally as of a past moment.
 - `GET /v1/spaces/:spaceId/episodes?kind=raw|reflection` — recent episodes.
 - `POST /v1/api-keys` / `GET /v1/api-keys` / `DELETE /v1/api-keys/:id` — issue,
   list, or revoke scoped API keys (admin only).
@@ -277,6 +308,35 @@ All routes except `POST /v1/tenants` require `Authorization: Bearer <api key>`.
 
 All five skip themselves cleanly if their prerequisites (database, or
 `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_ID_PRO`) aren't set.
+
+## Evaluation
+
+`npm run eval` measures answer quality end to end against public long-term
+memory benchmarks (`modules/eval`): it ingests each conversation into a
+throwaway tenant, retrieves for every question, answers from the retrieved
+context, and grades the answer with an LLM judge. It reports accuracy and
+evidence recall per question category plus retrieval latency percentiles.
+
+```bash
+npm run eval -- --dataset locomo --file ./locomo10.json --modes hybrid,vector --limit-conversations 1 --out report.json
+npm run eval -- --dataset longmemeval --file ./longmemeval_s.json --limit-conversations 20
+```
+
+Datasets are not bundled; download them from their upstream releases. Modes are
+compared on the same ingested data, and retrieval during evaluation does not
+reinforce episodes, so one mode cannot bias the next. Use `--answer-model` and
+`--judge-model` to pin the models, and `--keep` to leave the tenant in place
+for inspection. Ingestion makes real LLM calls: start with a small limit.
+
+## MCP server
+
+`npm run mcp` starts a stdio Model Context Protocol server that exposes the
+memory to any MCP client (`src/mcp`). It talks to the REST API, so it needs no
+database access. Configure it with `MAPMEMORY_API_KEY`, optionally
+`MAPMEMORY_API_URL` (default `http://localhost:4000`) and `MAPMEMORY_SPACE_ID`.
+
+Tools: `remember`, `recall` (with `asOf` and `includeHistory`), `fact_history`
+and `ingest_status`.
 
 ## Operations
 

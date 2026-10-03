@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { DbClient } from '../../../db/client.js';
 import { semanticNodes } from '../../../db/schema/graph.schema.js';
 import { toVectorLiteral } from '../../../shared/utils/vector-math.js';
+import { buildOrTsQuery } from '../../../shared/utils/lexical-query.js';
 import { normalizeLabel } from '../normalize.js';
 import type { EntityType, SemanticNode } from '../graph.types.js';
 
@@ -60,6 +61,19 @@ export class NodeRepository {
       .from(semanticNodes)
       .where(eq(semanticNodes.spaceId, spaceId))
       .orderBy(sql`${semanticNodes.embedding} <=> ${literal}::vector`)
+      .limit(limit);
+    return rows.map(toDomain);
+  }
+
+  async lexicalSearch(spaceId: string, queryText: string, limit: number): Promise<SemanticNode[]> {
+    const tsQuery = buildOrTsQuery(queryText);
+    if (!tsQuery) return [];
+    const matcher = sql`search_vector @@ to_tsquery('simple', ${tsQuery})`;
+    const rows = await this.db
+      .select()
+      .from(semanticNodes)
+      .where(and(eq(semanticNodes.spaceId, spaceId), matcher))
+      .orderBy(sql`ts_rank_cd(search_vector, to_tsquery('simple', ${tsQuery})) desc`)
       .limit(limit);
     return rows.map(toDomain);
   }

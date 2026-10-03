@@ -1,4 +1,6 @@
 import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { toVectorLiteral } from '../../../shared/utils/vector-math.js';
+import { buildOrTsQuery } from '../../../shared/utils/lexical-query.js';
 import type { DbClient } from '../../../db/client.js';
 import { episodeEdgeLinks, episodeSources, episodes, semanticEdges } from '../../../db/schema/graph.schema.js';
 import type { Episode, EpisodeKind } from '../graph.types.js';
@@ -14,6 +16,8 @@ function toDomain(row: typeof episodes.$inferSelect): Episode {
     accessCount: row.accessCount,
     lastAccessedSequence: row.lastAccessedSequence,
     embedding: row.embedding,
+    occurredAt: row.occurredAt,
+    createdAt: row.createdAt,
   };
 }
 
@@ -32,11 +36,17 @@ export class EpisodeRepository {
     return row?.max ?? 0;
   }
 
-  async create(spaceId: string, rawText: string, embedding: number[], importance = 5): Promise<Episode> {
+  async create(
+    spaceId: string,
+    rawText: string,
+    embedding: number[],
+    importance = 5,
+    occurredAt: Date | null = null,
+  ): Promise<Episode> {
     const sequenceNo = await this.nextSequenceNo(spaceId);
     const [row] = await this.db
       .insert(episodes)
-      .values({ spaceId, sequenceNo, rawText, embedding, importance })
+      .values({ spaceId, sequenceNo, rawText, embedding, importance, occurredAt })
       .returning();
     if (!row) throw new Error('Failed to create episode');
     return toDomain(row);
@@ -114,7 +124,7 @@ export class EpisodeRepository {
     return new Map(rows.map((r) => [r.episodeId, Number(r.count)]));
   }
 
-  async episodesByEdgeIds(edgeIds: string[]): Promise<Map<string, string[]>> {
+  async linkedEdgesByEpisode(edgeIds: string[]): Promise<Map<string, string[]>> {
     if (edgeIds.length === 0) return new Map();
     const rows = await this.db
       .select({ episodeId: episodeEdgeLinks.episodeId, edgeId: episodeEdgeLinks.semanticEdgeId })
@@ -164,6 +174,30 @@ export class EpisodeRepository {
       .from(episodes)
       .where(eq(episodes.spaceId, spaceId))
       .orderBy(desc(episodes.sequenceNo))
+      .limit(limit);
+    return rows.map(toDomain);
+  }
+
+  async nearestByEmbedding(spaceId: string, embedding: number[], limit: number): Promise<Episode[]> {
+    const literal = toVectorLiteral(embedding);
+    const rows = await this.db
+      .select()
+      .from(episodes)
+      .where(eq(episodes.spaceId, spaceId))
+      .orderBy(sql`${episodes.embedding} <=> ${literal}::vector`)
+      .limit(limit);
+    return rows.map(toDomain);
+  }
+
+  async lexicalSearch(spaceId: string, queryText: string, limit: number): Promise<Episode[]> {
+    const tsQuery = buildOrTsQuery(queryText);
+    if (!tsQuery) return [];
+    const matcher = sql`search_vector @@ to_tsquery('simple', ${tsQuery})`;
+    const rows = await this.db
+      .select()
+      .from(episodes)
+      .where(and(eq(episodes.spaceId, spaceId), matcher))
+      .orderBy(sql`ts_rank_cd(search_vector, to_tsquery('simple', ${tsQuery})) desc`)
       .limit(limit);
     return rows.map(toDomain);
   }

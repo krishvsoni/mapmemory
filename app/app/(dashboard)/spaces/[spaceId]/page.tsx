@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getSpace, listCentralEntities, listEpisodes } from '@/lib/endpoints';
 import { ApiError } from '@/lib/api';
@@ -31,6 +32,9 @@ export default async function SpaceDetailPage({ params }: { params: Promise<{ sp
       <div>
         <h1 className="text-xl font-bold text-white">{space.name}</h1>
         {space.description && <p className="text-sm text-slate-400">{space.description}</p>}
+        <Link href={`/spaces/${spaceId}/graph`} className="text-sm text-indigo-400 hover:text-indigo-300">
+          Open graph explorer →
+        </Link>
       </div>
 
       <Workbench spaceId={spaceId} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compositeEpisodicScore, episodicRelevance, recencyWeight, reinforcementBoost } from './episodic-scoring.js';
+import { compositeEpisodicScore, episodicRelevance, lexicalSignalFromRank, recencyWeight, reinforcementBoost } from './episodic-scoring.js';
 
 describe('episodicRelevance', () => {
   it('rewards full overlap with a larger episode over full overlap with a tiny one', () => {
@@ -83,5 +83,21 @@ describe('compositeEpisodicScore', () => {
     const negative = compositeEpisodicScore({ ...base, querySimilarity: -0.8 });
     const zero = compositeEpisodicScore({ ...base, querySimilarity: 0 });
     expect(negative).toBe(zero);
+  });
+});
+
+describe('lexical signal', () => {
+  const inputs = { relevance: 0.2, querySimilarity: 0.3, importance: 5, ageInSteps: 0, halfLifeSteps: 50, accessCount: 0 };
+
+  it('adds nothing when no lexical signal is supplied', () => {
+    expect(compositeEpisodicScore({ ...inputs, lexicalSignal: 0 })).toBe(compositeEpisodicScore(inputs));
+  });
+
+  it('rewards an episode that matched lexically', () => {
+    expect(compositeEpisodicScore({ ...inputs, lexicalSignal: 1 })).toBeGreaterThan(compositeEpisodicScore(inputs));
+  });
+
+  it('decays the signal with lexical rank', () => {
+    expect(lexicalSignalFromRank(0)).toBeGreaterThan(lexicalSignalFromRank(3));
   });
 });

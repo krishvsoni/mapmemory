@@ -9,7 +9,8 @@ const container = buildContainer();
 const worker = new Worker<IngestJobData>(
   INGEST_QUEUE_NAME,
   async (job) => {
-    const result = await container.consolidation.ingest(job.data.spaceId, job.data.observationText);
+    const occurredAt = job.data.occurredAt ? new Date(job.data.occurredAt) : null;
+    const result = await container.consolidation.ingest(job.data.spaceId, job.data.observationText, occurredAt);
     return {
       episodeId: result.episode.id,
       createdEdgeCount: result.createdEdges.length,

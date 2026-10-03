@@ -32,6 +32,11 @@ export const EPISODIC_SCORE_WEIGHTS = {
   reinforcement: 0.1,
 } as const;
 
+export const HYBRID_RETRIEVAL = {
+  episodeCandidatePool: 10,
+  episodicLexicalWeight: 0.2,
+} as const;
+
 export const REFLECTION_DEFAULTS = {
   candidatePoolSize: 60,
   clusterSize: 12,

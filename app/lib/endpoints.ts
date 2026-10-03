@@ -5,6 +5,8 @@ import type {
   ApiKeySummary,
   CentralEntity,
   Episode,
+  GraphSnapshot,
+  PresentedFact,
   IngestJobResult,
   IssuedApiKey,
   JobStatus,
@@ -68,4 +70,23 @@ export function revokeApiKey(apiKeyId: string): Promise<{ revoked: boolean }> {
 
 export function getUsage(): Promise<UsageSummary> {
   return apiFetch<UsageSummary>('/v1/usage');
+}
+
+export interface SnapshotQuery {
+  asOf?: string;
+  includeHistory?: boolean;
+  limit?: number;
+}
+
+export function getGraphSnapshot(spaceId: string, query: SnapshotQuery = {}): Promise<GraphSnapshot> {
+  const params = new URLSearchParams();
+  if (query.asOf) params.set('asOf', query.asOf);
+  if (query.includeHistory) params.set('includeHistory', 'true');
+  if (query.limit) params.set('limit', String(query.limit));
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  return apiFetch<GraphSnapshot>(`/v1/spaces/${spaceId}/graph${suffix}`);
+}
+
+export function getFactHistory(spaceId: string, edgeId: string): Promise<{ history: PresentedFact[] }> {
+  return apiFetch<{ history: PresentedFact[] }>(`/v1/spaces/${spaceId}/edges/${edgeId}/history`);
 }

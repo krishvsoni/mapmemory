@@ -4,6 +4,7 @@ import { getRedisConnection } from './redis-connection.js';
 export interface IngestJobData {
   spaceId: string;
   observationText: string;
+  occurredAt?: string;
 }
 
 export const INGEST_QUEUE_NAME = 'memory-ingest';

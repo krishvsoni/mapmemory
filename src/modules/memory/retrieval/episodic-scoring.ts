@@ -1,4 +1,4 @@
-import { EPISODIC_SCORE_WEIGHTS } from '../../../config/constants.js';
+import { EPISODIC_SCORE_WEIGHTS, HYBRID_RETRIEVAL } from '../../../config/constants.js';
 
 export function episodicRelevance(overlapCount: number, totalFactCount: number): number {
   const total = Math.max(totalFactCount, 1);
@@ -21,6 +21,11 @@ export interface CompositeScoreInputs {
   ageInSteps: number;
   halfLifeSteps: number;
   accessCount: number;
+  lexicalSignal?: number;
+}
+
+export function lexicalSignalFromRank(rank: number): number {
+  return 1 / (1 + Math.max(0, rank));
 }
 
 export function compositeEpisodicScore(inputs: CompositeScoreInputs): number {
@@ -34,6 +39,7 @@ export function compositeEpisodicScore(inputs: CompositeScoreInputs): number {
     EPISODIC_SCORE_WEIGHTS.querySimilarity * normalizedSimilarity +
     EPISODIC_SCORE_WEIGHTS.importance * normalizedImportance +
     EPISODIC_SCORE_WEIGHTS.recency * recency +
-    EPISODIC_SCORE_WEIGHTS.reinforcement * reinforcement
+    EPISODIC_SCORE_WEIGHTS.reinforcement * reinforcement +
+    HYBRID_RETRIEVAL.episodicLexicalWeight * (inputs.lexicalSignal ?? 0)
   );
 }

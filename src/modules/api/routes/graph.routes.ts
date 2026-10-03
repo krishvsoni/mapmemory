@@ -1,9 +1,18 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { Container } from '../../../container.js';
 import { NotFoundError, ValidationError } from '../../../shared/errors.js';
 import { requireSpaceScope } from '../../auth/authorize.middleware.js';
 import type { EpisodeKind } from '../../graph/graph.types.js';
+import { SNAPSHOT_LIMITS } from '../../graph/snapshot.service.js';
+import { scopeFromAsOf } from '../../graph/temporal.js';
 import { formatScoredEdges } from './graph.presenter.js';
+
+const snapshotQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(SNAPSHOT_LIMITS.maxEntities).default(SNAPSHOT_LIMITS.defaultEntities),
+  asOf: z.string().datetime({ offset: true }).optional(),
+  includeHistory: z.enum(['true', 'false']).optional(),
+});
 
 export function registerGraphRoutes(app: FastifyInstance, container: Container): void {
   const scoped = { preHandler: [requireSpaceScope()] };
@@ -90,5 +99,17 @@ export function registerGraphRoutes(app: FastifyInstance, container: Container):
 
     const episodes = await container.episodes.recent(spaceId, limit ? Number(limit) : 20);
     return { episodes: kind ? episodes.filter((e) => e.kind === kind) : episodes };
+  });
+
+  app.get('/v1/spaces/:spaceId/graph', scoped, async (request) => {
+    const tenantId = request.tenantId as string;
+    const { spaceId } = request.params as { spaceId: string };
+    const query = snapshotQuerySchema.parse(request.query);
+
+    const space = await container.tenants.spaces.findById(tenantId, spaceId);
+    if (!space) throw new NotFoundError('Memory space');
+
+    const scope = scopeFromAsOf(query.asOf ? new Date(query.asOf) : undefined, query.includeHistory === 'true');
+    return container.snapshots.snapshot(spaceId, query.limit, scope);
   });
 }

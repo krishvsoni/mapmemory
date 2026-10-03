@@ -15,6 +15,7 @@ const ingestSchema = z.object({
     .string()
     .min(1)
     .max(INPUT_LIMITS.maxIngestTextLength, `text must be at most ${INPUT_LIMITS.maxIngestTextLength} characters`),
+  occurredAt: z.string().datetime({ offset: true }).optional(),
 });
 
 const retrieveSchema = z.object({
@@ -25,6 +26,9 @@ const retrieveSchema = z.object({
   depth: z.number().int().positive().max(5).optional(),
   width: z.number().int().positive().max(20).optional(),
   minSimilarity: z.number().min(0).max(1).optional(),
+  asOf: z.string().datetime({ offset: true }).optional(),
+  hybrid: z.boolean().optional(),
+  includeHistory: z.boolean().optional(),
 });
 
 async function assertSpaceOwnership(container: Container, tenantId: string, spaceId: string): Promise<void> {
@@ -32,9 +36,9 @@ async function assertSpaceOwnership(container: Container, tenantId: string, spac
   if (!space) throw new NotFoundError('Memory space');
 }
 
-async function enqueueIngest(tenantId: string, spaceId: string, text: string): Promise<string> {
+async function enqueueIngest(tenantId: string, spaceId: string, text: string, occurredAt?: string): Promise<string> {
   const priority = await computeFairPriority(tenantId);
-  const job = await getIngestQueue().add('ingest', { spaceId, observationText: text }, { priority });
+  const job = await getIngestQueue().add('ingest', { spaceId, observationText: text, occurredAt }, { priority });
   return job.id as string;
 }
 
@@ -69,10 +73,10 @@ export function registerMemoryRoutes(app: FastifyInstance, container: Container)
           return;
         }
 
-        jobId = await enqueueIngest(tenantId, spaceId, body.text);
+        jobId = await enqueueIngest(tenantId, spaceId, body.text, body.occurredAt);
         await completeIdempotencyKey(scopeKey, jobId);
       } else {
-        jobId = await enqueueIngest(tenantId, spaceId, body.text);
+        jobId = await enqueueIngest(tenantId, spaceId, body.text, body.occurredAt);
       }
 
       await container.auditLog.record({
@@ -136,15 +140,20 @@ export function registerMemoryRoutes(app: FastifyInstance, container: Container)
         depth: body.depth,
         width: body.width,
         minSimilarity: body.minSimilarity,
+        asOf: body.asOf ? new Date(body.asOf) : undefined,
+        hybrid: body.hybrid,
+        includeHistory: body.includeHistory,
       });
 
       const facts = await formatScoredEdges(container, result.facts);
       return {
+        intent: result.intent,
         facts,
         episodes: result.episodes.map((e) => ({
           episodeId: e.episode.id,
           sequenceNo: e.episode.sequenceNo,
           kind: e.episode.kind,
+          occurredAt: (e.episode.occurredAt ?? e.episode.createdAt).toISOString(),
           text: e.episode.rawText,
           importance: e.episode.importance,
           relevance: e.relevance,

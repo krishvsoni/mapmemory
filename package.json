@@ -17,11 +17,14 @@
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:prune": "tsx src/scripts/prune-superseded-edges.ts"
+    "db:prune": "tsx src/scripts/prune-superseded-edges.ts",
+    "eval": "tsx src/scripts/run-eval.ts",
+    "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@fastify/swagger": "^9.4.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "bullmq": "^5.34.5",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.3",

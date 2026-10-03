@@ -134,6 +134,20 @@ describe.skipIf(!dbAvailable)('memory loop integration (real Postgres + Redis)',
     expect(result.facts.some((f) => f.edge.supersededByEdgeId !== null)).toBe(false);
   });
 
+  it('returns the episodes that grounded the retrieved facts', async () => {
+    const result = await retrieval.retrieve(spaceId, 'bob has sword');
+
+    expect(result.episodes.length).toBeGreaterThan(0);
+    expect(result.episodes.some((e) => e.episode.rawText.includes('bob'))).toBe(true);
+  });
+
+  it('answers as-of queries from the fact validity window', async () => {
+    const beforeAnything = new Date('2000-01-01T00:00:00Z');
+    const past = await retrieval.retrieve(spaceId, 'bob has sword', { asOf: beforeAnything });
+    expect(past.facts).toHaveLength(0);
+    expect(past.episodes).toHaveLength(0);
+  });
+
   it('clusters topic-connected episodes and synthesizes a reflection', async () => {
     provider.enqueue('Bob tends to acquire items and has clear preferences among them.');
 

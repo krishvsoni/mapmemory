@@ -93,6 +93,9 @@ export function Workbench({ spaceId }: { spaceId: string }) {
 
         {retrievalResult && (
           <div className="mt-4 space-y-3">
+            <p className="text-xs text-slate-500">
+              Interpreted as a <Badge>{retrievalResult.intent}</Badge> question
+            </p>
             <div>
               <h3 className="text-xs uppercase text-slate-500 mb-1">Facts</h3>
               {retrievalResult.facts.length === 0 ? (
@@ -104,7 +107,17 @@ export function Workbench({ spaceId }: { spaceId: string }) {
                       <span className="text-slate-100">{fact.subject}</span>{' '}
                       <span className="text-indigo-400">{fact.relation}</span>{' '}
                       <span className="text-slate-100">{fact.object}</span>
-                      <span className="text-slate-600 text-xs"> ({fact.score.toFixed(2)})</span>
+                      {fact.status === 'superseded' && (
+                        <>
+                          {' '}
+                          <Badge tone="warning">superseded</Badge>
+                        </>
+                      )}
+                      <span className="text-slate-600 text-xs">
+                        {' '}
+                        confidence {(fact.confidence * 100).toFixed(0)}%
+                        {fact.validFrom ? ` · since ${fact.validFrom.slice(0, 10)}` : ''}
+                      </span>
                     </li>
                   ))}
                 </ul>

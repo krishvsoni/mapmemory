@@ -15,6 +15,7 @@ const extractionSchema = z.object({
       object: z.string().min(1),
       subjectType: entityTypeSchema,
       objectType: entityTypeSchema,
+      validFrom: z.string().nullish(),
     }),
   ),
 });
@@ -24,18 +25,31 @@ export interface ExtractionResult {
   triplets: Triplet[];
 }
 
+function parseValidFrom(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toTriplets(parsed: z.infer<typeof extractionSchema>): ExtractionResult {
+  return {
+    importance: parsed.importance,
+    triplets: parsed.triplets.map((t) => ({ ...t, validFrom: parseValidFrom(t.validFrom) })),
+  };
+}
+
 export class TripletExtractor {
   constructor(private readonly llm: LlmService) {}
 
-  async extract(observationText: string): Promise<ExtractionResult> {
-    const messages = buildTripletExtractionPrompt(observationText);
+  async extract(observationText: string, referenceTime?: Date): Promise<ExtractionResult> {
+    const messages = buildTripletExtractionPrompt(observationText, referenceTime);
     const result = await this.llm.completeJson(messages, extractionSchema);
 
     if (result.triplets.length === 0 && env.OPENROUTER_ESCALATION_CHAT_MODEL) {
       const escalated = await this.llm.completeJson(messages, extractionSchema, 1, env.OPENROUTER_ESCALATION_CHAT_MODEL);
-      return escalated;
+      return toTriplets(escalated);
     }
 
-    return result;
+    return toTriplets(result);
   }
 }

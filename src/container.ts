@@ -4,6 +4,7 @@ import { GraphService } from './modules/graph/graph.service.js';
 import { TraversalService } from './modules/graph/traversal.service.js';
 import { CentralityService } from './modules/graph/centrality.service.js';
 import { PathfindingService } from './modules/graph/pathfinding.service.js';
+import { GraphSnapshotService } from './modules/graph/snapshot.service.js';
 import { EpisodeRepository } from './modules/graph/repository/episode.repository.js';
 import { ConsolidationService } from './modules/memory/consolidation/consolidation.service.js';
 import { RetrievalService } from './modules/memory/retrieval/retrieval.service.js';
@@ -24,6 +25,7 @@ export interface Container {
   traversal: TraversalService;
   centrality: CentralityService;
   pathfinding: PathfindingService;
+  snapshots: GraphSnapshotService;
   episodes: EpisodeRepository;
   consolidation: ConsolidationService;
   retrieval: RetrievalService;
@@ -63,6 +65,7 @@ export function buildContainer(): Container {
   const centrality = new CentralityService(readGraph);
   const traversal = new TraversalService(readGraph, centrality);
   const pathfinding = new PathfindingService(readGraph);
+  const snapshots = new GraphSnapshotService(readGraph, centrality);
   const retrieval = new RetrievalService(readGraph, traversal, readEpisodes, llm, episodes);
   const reflection = new ReflectionService(db, llm);
 
@@ -72,6 +75,7 @@ export function buildContainer(): Container {
     traversal,
     centrality,
     pathfinding,
+    snapshots,
     episodes,
     consolidation,
     retrieval,

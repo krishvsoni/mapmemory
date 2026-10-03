@@ -24,6 +24,14 @@ export interface JobStatus {
   result: unknown;
 }
 
+export type FactStatus = 'current' | 'superseded';
+
+export interface FactSource {
+  episodeId: string;
+  sequenceNo: number;
+  occurredAt: string | null;
+}
+
 export interface PresentedFact {
   edgeId: string;
   subject: string;
@@ -31,6 +39,12 @@ export interface PresentedFact {
   object: string;
   score: number;
   depth: number;
+  status: FactStatus;
+  validFrom: string | null;
+  validTo: string | null;
+  confidence: number;
+  corroborationCount: number;
+  sources: FactSource[];
 }
 
 export type EpisodeKind = 'raw' | 'reflection';
@@ -39,12 +53,16 @@ export interface RetrievedEpisode {
   episodeId: string;
   sequenceNo: number;
   kind: EpisodeKind;
+  occurredAt: string;
   text: string;
   importance: number;
   relevance: number;
 }
 
+export type QueryIntent = 'factual' | 'temporal' | 'relational' | 'summary';
+
 export interface RetrievalResult {
+  intent: QueryIntent;
   facts: PresentedFact[];
   episodes: RetrievedEpisode[];
 }
@@ -91,4 +109,27 @@ export interface CentralEntity {
   nodeId: string;
   label: string;
   centrality: number;
+}
+
+export interface SnapshotNode {
+  id: string;
+  label: string;
+  entityType: string | null;
+  centrality: number;
+}
+
+export interface SnapshotEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relation: string;
+  status: FactStatus;
+  validFrom: string;
+  validTo: string | null;
+  confidence: number;
+}
+
+export interface GraphSnapshot {
+  nodes: SnapshotNode[];
+  edges: SnapshotEdge[];
 }
