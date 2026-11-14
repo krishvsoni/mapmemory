@@ -4,7 +4,7 @@ import { LruCache } from '../../shared/utils/lru-cache.js';
 import { CACHE_DEFAULTS } from '../../config/constants.js';
 import { AppError } from '../../shared/errors.js';
 import { getRedisConnection } from '../queue/redis-connection.js';
-import { OpenRouterProvider } from './openrouter.provider.js';
+import { createLlmProvider } from './provider.factory.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { withGlobalLlmSlot } from './global-concurrency.js';
 import type { ChatMessage, LlmProvider } from './llm.types.js';
@@ -19,7 +19,7 @@ export class LlmService {
   private readonly chatBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
   private readonly embedBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
 
-  constructor(private readonly provider: LlmProvider = new OpenRouterProvider()) {}
+  constructor(private readonly provider: LlmProvider = createLlmProvider()) {}
 
   async chat(messages: ChatMessage[], temperature = 0.2, model?: string): Promise<string> {
     return this.chatBreaker.execute(() => withGlobalLlmSlot(() => this.provider.complete(messages, { temperature, model })));

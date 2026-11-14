@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
-const envSchema = z.object({
+const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
 
@@ -9,12 +9,17 @@ const envSchema = z.object({
   DATABASE_READ_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1),
 
-  LLM_PROVIDER: z.enum(['openrouter']).default('openrouter'),
-  OPENROUTER_API_KEY: z.string().min(1),
+  LLM_PROVIDER: z.enum(['openrouter', 'openai']).default('openrouter'),
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_CHAT_MODEL: z.string().default('openai/gpt-4o-mini'),
   OPENROUTER_ESCALATION_CHAT_MODEL: z.string().optional(),
   OPENROUTER_EMBED_MODEL: z.string().default('openai/text-embedding-3-small'),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  OPENAI_CHAT_MODEL: z.string().default('gpt-4o-mini'),
+  OPENAI_ESCALATION_CHAT_MODEL: z.string().optional(),
+  OPENAI_EMBED_MODEL: z.string().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: z.coerce.number().default(1536),
 
   AUTH_JWT_SECRET: z.string().min(16),
@@ -40,10 +45,21 @@ const envSchema = z.object({
   KINDE_CALLBACK_URL: z.string().url().optional(),
 });
 
+const envSchema = baseSchema.superRefine((value, ctx) => {
+  const keyName = value.LLM_PROVIDER === 'openai' ? 'OPENAI_API_KEY' : 'OPENROUTER_API_KEY';
+  if (!value[keyName]) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [keyName], message: `Required when LLM_PROVIDER=${value.LLM_PROVIDER}` });
+  }
+});
+
 export type Env = z.infer<typeof envSchema>;
 
+function withoutBlankValues(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== undefined && value.trim() !== ''));
+}
+
 function loadEnv(): Env {
-  const parsed = envSchema.safeParse(process.env);
+  const parsed = envSchema.safeParse(withoutBlankValues(process.env));
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`Invalid environment configuration: ${issues}`);

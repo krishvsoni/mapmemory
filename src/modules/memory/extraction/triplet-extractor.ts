@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { LlmService } from '../../llm/llm.service.js';
-import { env } from '../../../config/env.js';
+import { escalationChatModel } from '../../llm/provider.factory.js';
 import { buildTripletExtractionPrompt } from './extraction.prompts.js';
 import type { Triplet } from '../../graph/graph.types.js';
 
@@ -45,8 +45,9 @@ export class TripletExtractor {
     const messages = buildTripletExtractionPrompt(observationText, referenceTime);
     const result = await this.llm.completeJson(messages, extractionSchema);
 
-    if (result.triplets.length === 0 && env.OPENROUTER_ESCALATION_CHAT_MODEL) {
-      const escalated = await this.llm.completeJson(messages, extractionSchema, 1, env.OPENROUTER_ESCALATION_CHAT_MODEL);
+    const escalationModel = escalationChatModel();
+    if (result.triplets.length === 0 && escalationModel) {
+      const escalated = await this.llm.completeJson(messages, extractionSchema, 1, escalationModel);
       return toTriplets(escalated);
     }
 

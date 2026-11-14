@@ -1,7 +1,14 @@
-import { env } from '../../config/env.js';
 import { AppError } from '../../shared/errors.js';
 import { withRetry } from './retry.js';
 import type { ChatCompletionOptions, ChatMessage, LlmProvider } from './llm.types.js';
+
+export interface OpenAiCompatibleConfig {
+  name: string;
+  apiKey: string;
+  baseUrl: string;
+  chatModel: string;
+  embeddingModel: string;
+}
 
 interface ChatCompletionResponse {
   choices: Array<{ message: { content: string | null } }>;
@@ -20,15 +27,14 @@ function isRetryableError(error: unknown): boolean {
 
 class RetryableHttpError extends Error {}
 
-export class OpenRouterProvider implements LlmProvider {
-  readonly name = 'openrouter';
+export class OpenAiCompatibleProvider implements LlmProvider {
+  readonly name: string;
+  readonly embeddingModelId: string;
 
-  constructor(
-    private readonly apiKey: string = env.OPENROUTER_API_KEY,
-    private readonly baseUrl: string = env.OPENROUTER_BASE_URL,
-    private readonly chatModel: string = env.OPENROUTER_CHAT_MODEL,
-    readonly embeddingModelId: string = env.OPENROUTER_EMBED_MODEL,
-  ) {}
+  constructor(private readonly config: OpenAiCompatibleConfig) {
+    this.name = config.name;
+    this.embeddingModelId = config.embeddingModel;
+  }
 
   async complete(messages: ChatMessage[], options: ChatCompletionOptions = {}): Promise<string> {
     try {
@@ -53,11 +59,11 @@ export class OpenRouterProvider implements LlmProvider {
   }
 
   private async completeOnce(messages: ChatMessage[], options: ChatCompletionOptions): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({
-        model: options.model ?? this.chatModel,
+        model: options.model ?? this.config.chatModel,
         messages,
         temperature: options.temperature ?? 0.2,
         max_tokens: options.maxTokens ?? 1024,
@@ -77,7 +83,7 @@ export class OpenRouterProvider implements LlmProvider {
   }
 
   private async embedOnce(texts: string[]): Promise<number[][]> {
-    const response = await fetch(`${this.baseUrl}/embeddings`, {
+    const response = await fetch(`${this.config.baseUrl}/embeddings`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify({ model: this.embeddingModelId, input: texts }),
@@ -97,7 +103,7 @@ export class OpenRouterProvider implements LlmProvider {
 
   private headers(): Record<string, string> {
     return {
-      Authorization: `Bearer ${this.apiKey}`,
+      Authorization: `Bearer ${this.config.apiKey}`,
       'Content-Type': 'application/json',
     };
   }
